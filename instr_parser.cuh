@@ -1,0 +1,110 @@
+#include <string>
+#include "defs.cuh"
+#include <vector>
+#include <stdio.h>
+#include "logger.cuh"
+#include "cuda_utils.cuh"
+
+struct instruction
+{
+  TaskType type;
+  std::vector<float> values;
+};
+
+struct d_instruction
+{
+  TaskType type;
+  float *values;
+};
+
+class instructions
+{
+public:
+  std::vector<instruction> tasks;
+  FILE *ins_file;
+  // Default blank constructor
+  instructions(){};
+  instructions(FILE *file)
+  {
+    ins_file = file;
+  };
+  instruction parse_instruction(char *line)
+  {
+    instruction ins;
+    char *instr = strtok(line, " ,");
+    while (instr != NULL)
+    {
+      // Log(debug, "instr: %s", instr);
+      if (strcmp(instr, "push") == 0 || strcmp(instr, "PUSH") == 0)
+        ins.type = TaskType(PUSH);
+      else if (strcmp(instr, "pop") == 0 || strcmp(instr, "POP") == 0)
+        ins.type = TaskType(POP);
+      else if (strcmp(instr, "batch_push") == 0 || strcmp(instr, "BATCH_PUSG") == 0)
+        ins.type = TaskType(BATCH_PUSH);
+      else if (strcmp(instr, "top") == 0 || strcmp(instr, "TOP") == 0)
+        ins.type = TaskType(TOP);
+      else
+        ins.values.push_back(float(atof(instr)));
+      instr = strtok(NULL, " ,");
+    }
+    return ins;
+  };
+  void populate_ins_from_file(FILE *filename = NULL)
+  {
+    if (filename == NULL)
+      filename = ins_file;
+    char line[100];
+    while (fgets(line, 100, filename))
+      tasks.push_back(parse_instruction(line));
+  }
+  // iterate over ilist and print out the instructions with values
+  void print()
+  {
+    for (int i = 0; i < this->tasks.size(); i++)
+    {
+      instruction ins = this->tasks.at(i);
+      Log(debug, "ins - type: %s", enum_to_str(ins.type));
+      for (int j = 0; j < ins.values.size(); j++)
+      {
+        Log<comma>(debug, "%f", ins.values.at(j));
+      }
+      Log<nun>(debug, "\n");
+    }
+  }
+  uint get_max_batch_size()
+  {
+    uint max_batch_size = 0;
+    for (int i = 0; i < this->tasks.size(); i++)
+    {
+      instruction ins = this->tasks.at(i);
+      if (ins.type == TaskType(BATCH_PUSH))
+      {
+        if (ins.values.size() > max_batch_size)
+          max_batch_size = ins.values.size();
+      }
+    }
+    return max_batch_size;
+  }
+
+  d_instruction *to_device_array()
+  {
+    d_instruction *d_tasks, *h_tasks;
+    h_tasks = (d_instruction *)malloc(sizeof(d_instruction) * tasks.size());
+    uint max_batch_size = get_max_batch_size();
+    for (int i = 0; i < tasks.size(); i++)
+    {
+      CUDA_RUNTIME(cudaMalloc((void **)&h_tasks[i].values, sizeof(float) * max_batch_size));
+      CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(float) * max_batch_size));
+      float *h_values = new float[tasks.at(i).values.size()];
+      std::copy(tasks.at(i).values.begin(), tasks.at(i).values.end(), h_values);
+      CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(float) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
+      delete[] h_values;
+    }
+
+    CUDA_RUNTIME(cudaMalloc((void **)&d_tasks, sizeof(d_instruction) * tasks.size()));
+    CUDA_RUNTIME(cudaMemcpy(d_tasks, h_tasks, sizeof(d_instruction) * tasks.size(), cudaMemcpyHostToDevice));
+    delete[] h_tasks;
+
+    return d_tasks;
+  }
+};
