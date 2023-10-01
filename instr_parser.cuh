@@ -9,12 +9,10 @@ struct instruction
 {
   TaskType type;
   std::vector<float> values;
-};
-
-struct d_instruction
-{
-  TaskType type;
-  float *values;
+  instruction()
+  {
+    values = std::vector<float>();
+  };
 };
 
 class instructions
@@ -31,7 +29,7 @@ public:
   instruction parse_instruction(char *line)
   {
     instruction ins;
-    char *instr = strtok(line, " ,");
+    char *instr = strtok(line, " ,\n");
     while (instr != NULL)
     {
       // Log(debug, "instr: %s", instr);
@@ -55,7 +53,10 @@ public:
       filename = ins_file;
     char line[100];
     while (fgets(line, 100, filename))
-      tasks.push_back(parse_instruction(line));
+    {
+      instruction ins = parse_instruction(line);
+      this->tasks.push_back(ins);
+    }
   }
   // iterate over ilist and print out the instructions with values
   void print()
@@ -63,8 +64,8 @@ public:
     for (int i = 0; i < this->tasks.size(); i++)
     {
       instruction ins = this->tasks.at(i);
-      Log(debug, "ins - type: %s", enum_to_str(ins.type));
-      for (int j = 0; j < ins.values.size(); j++)
+      Log(debug, "ins - type: %s, values_size: %lu", enum_to_str(ins.type), ins.values.size());
+      for (size_t j = 0; j < ins.values.size(); j++)
       {
         Log<comma>(debug, "%f", ins.values.at(j));
       }
@@ -73,7 +74,7 @@ public:
   }
   uint get_max_batch_size()
   {
-    uint max_batch_size = 0;
+    uint max_batch_size = 1;
     for (int i = 0; i < this->tasks.size(); i++)
     {
       instruction ins = this->tasks.at(i);
@@ -90,6 +91,7 @@ public:
   {
     d_instruction *d_tasks, *h_tasks;
     h_tasks = (d_instruction *)malloc(sizeof(d_instruction) * tasks.size());
+    Log(debug, "tasks size %lu", tasks.size());
     uint max_batch_size = get_max_batch_size();
     for (int i = 0; i < tasks.size(); i++)
     {
@@ -97,6 +99,7 @@ public:
       CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(float) * max_batch_size));
       float *h_values = new float[tasks.at(i).values.size()];
       std::copy(tasks.at(i).values.begin(), tasks.at(i).values.end(), h_values);
+      h_tasks[i].type = tasks.at(i).type;
       CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(float) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
       delete[] h_values;
     }

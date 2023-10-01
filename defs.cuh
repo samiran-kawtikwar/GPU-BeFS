@@ -43,3 +43,9 @@ const char *enum_to_str(TaskType type)
   else
     return "unknown";
 };
+
+struct d_instruction
+{
+  TaskType type;
+  float *values;
+};
