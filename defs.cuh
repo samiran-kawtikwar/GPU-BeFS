@@ -15,11 +15,12 @@ enum LogPriorityEnum
   none
 };
 
-template <typename T>
-struct Node
+struct NODE
 {
   float key;
-  T value;
+  float value;
+  NODE(){};
+  __host__ __device__ NODE(float a, float b) : key(a), value(b){};
 };
 
 enum TaskType
@@ -47,5 +48,5 @@ const char *enum_to_str(TaskType type)
 struct d_instruction
 {
   TaskType type;
-  float *values;
+  NODE *values;
 };

@@ -25,12 +25,12 @@ int main(int argc, char **argv)
   d_instruction *d_ilist = ilist.to_device_array();
 
   // create BHEAP on device
-  BHEAP<float> d_bheap;
+  BHEAP<NODE> d_bheap;
   CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_heap, MAX_HEAP_SIZE * sizeof(float)));
   CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_size, sizeof(size_t)));
 
   const size_t ins_len = ilist.tasks.size();
   const size_t max_batch = ilist.get_max_batch_size();
-  execKernel((parse_queue<float>), 1, 32, 0, true, d_bheap, d_ilist, ins_len, max_batch);
+  execKernel((parse_queue<NODE>), 1, 32, 0, true, d_bheap, d_ilist, ins_len, max_batch);
   d_bheap.print();
 }

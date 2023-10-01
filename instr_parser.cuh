@@ -8,10 +8,10 @@
 struct instruction
 {
   TaskType type;
-  std::vector<float> values;
+  std::vector<NODE> values;
   instruction()
   {
-    values = std::vector<float>();
+    values = std::vector<NODE>();
   };
 };
 
@@ -42,7 +42,7 @@ public:
       else if (strcmp(instr, "top") == 0 || strcmp(instr, "TOP") == 0)
         ins.type = TaskType(TOP);
       else
-        ins.values.push_back(float(atof(instr)));
+        ins.values.push_back(NODE(float(atof(instr)), 0));
       instr = strtok(NULL, " ,");
     }
     return ins;
@@ -95,12 +95,12 @@ public:
     uint max_batch_size = get_max_batch_size();
     for (int i = 0; i < tasks.size(); i++)
     {
-      CUDA_RUNTIME(cudaMalloc((void **)&h_tasks[i].values, sizeof(float) * max_batch_size));
-      CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(float) * max_batch_size));
-      float *h_values = new float[tasks.at(i).values.size()];
+      CUDA_RUNTIME(cudaMalloc((void **)&h_tasks[i].values, sizeof(NODE) * max_batch_size));
+      CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(NODE) * max_batch_size));
+      NODE *h_values = new NODE[tasks.at(i).values.size()];
       std::copy(tasks.at(i).values.begin(), tasks.at(i).values.end(), h_values);
       h_tasks[i].type = tasks.at(i).type;
-      CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(float) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
+      CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(NODE) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
       delete[] h_values;
     }
 

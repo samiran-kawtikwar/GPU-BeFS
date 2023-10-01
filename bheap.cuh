@@ -19,7 +19,7 @@ public:
     printf("heap size: %lu\n", h_size[0]);
     for (size_t i = 0; i < h_size[0]; i++)
     {
-      printf("%f, ", h_heap[i]);
+      printf("%f, ", h_heap[i].key);
     }
     printf("\n");
   }
@@ -36,7 +36,7 @@ __device__ Node pop(BHEAP<Node> heap)
     if (size == 0)
     {
       printf("heap underflow!!\n");
-      min = NULL;
+      min = Node(0, 0);
     }
     min = h[0];
     h[0] = h[size - 1];
@@ -45,11 +45,11 @@ __device__ Node pop(BHEAP<Node> heap)
     while (2 * i + 1 < size)
     {
       size_t j = 2 * i + 1;
-      if (j + 1 < size && h[j + 1] < h[j])
+      if (j + 1 < size && h[j + 1].key < h[j].key)
       {
         j++;
       }
-      if (h[i] < h[j])
+      if (h[i].key < h[j].key)
       {
         break;
       }
@@ -80,7 +80,7 @@ __device__ void push(BHEAP<Node> bheap, Node new_Node)
     heap[size] = new_Node;
     // Up heapify the heap to maintain min heap property
     size_t i = size;
-    while (i > 0 && heap[i] < heap[(i - 1) / 2])
+    while (i > 0 && heap[i].key < heap[(i - 1) / 2].key)
     {
       Node temp = heap[i];
       heap[i] = heap[(i - 1) / 2];
