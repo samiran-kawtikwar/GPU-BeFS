@@ -1,7 +1,7 @@
-#include "logger.cuh"
+#include "../utils/logger.cuh"
 #include <cuda.h>
 #include <cuda_runtime_api.h>
-#include "defs.cuh"
+#include "../defs.cuh"
 
 template <typename NODE>
 class BHEAP

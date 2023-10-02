@@ -2,8 +2,8 @@
 #include "defs.cuh"
 #include <vector>
 #include <stdio.h>
-#include "logger.cuh"
-#include "cuda_utils.cuh"
+#include "utils/logger.cuh"
+#include "utils/cuda_utils.cuh"
 
 struct instruction
 {

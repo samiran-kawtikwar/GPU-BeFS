@@ -1,11 +1,21 @@
 #pragma once
-#include "defs.cuh"
+// #include "defs.cuh"
 #include <iostream>
 #include <string>
 const char newline[] = "\n";
 const char comma[] = ", ";
 const char colon[] = ": ";
 const char nun[] = "";
+
+enum LogPriorityEnum
+{
+  critical,
+  warn,
+  error,
+  info,
+  debug,
+  none
+};
 
 template <const char *END = newline, typename... Args>
 void Log(LogPriorityEnum l, const char *f, Args... args)

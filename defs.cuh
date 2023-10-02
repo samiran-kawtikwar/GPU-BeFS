@@ -5,16 +5,6 @@
 typedef unsigned long long int uint64;
 typedef unsigned int uint;
 
-enum LogPriorityEnum
-{
-  critical,
-  warn,
-  error,
-  info,
-  debug,
-  none
-};
-
 enum TaskType
 {
   PUSH = 0,

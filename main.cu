@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <cmath>
 #include <vector>
-#include "logger.cuh"
+#include "utils/logger.cuh"
 #include "instr_parser.cuh"
-#include "bheap.cuh"
-#include "cuda_utils.cuh"
+#include "heap/bheap.cuh"
+#include "utils/cuda_utils.cuh"
+#include "queue/queue.cuh"
 
 int main(int argc, char **argv)
 {
