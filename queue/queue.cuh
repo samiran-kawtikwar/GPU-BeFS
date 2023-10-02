@@ -2,9 +2,8 @@
 
 #include <cuda/atomic>
 #include <cuda_runtime.h>
-
-// #include "CGArray.cuh"
 #include "queue_utils.cuh"
+typedef uint32_t queue_type;
 
 __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
 {
@@ -57,12 +56,12 @@ __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
 
 #define queue_declare(queue, tickets, head, tail)                                                           \
     cuda::atomic<uint32_t, cuda::thread_scope_device> *tickets = nullptr, *head = nullptr, *tail = nullptr; \
-    uint32_t *queue = nullptr
+    queue_type *queue = nullptr
 
 #define queue_init(queue, tickets, head, tail, queue_size, dev)                                                               \
     do                                                                                                                        \
     {                                                                                                                         \
-        CUDA_RUNTIME(cudaMalloc((void **)&queue, queue_size * sizeof(uint32_t)));                                             \
+        CUDA_RUNTIME(cudaMalloc((void **)&queue, queue_size * sizeof(queue_type)));                                           \
         CUDA_RUNTIME(cudaMalloc((void **)&tickets, queue_size * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));  \
         CUDA_RUNTIME(cudaMemset((void *)tickets, 0, queue_size * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>))); \
         CUDA_RUNTIME(cudaMalloc((void **)&head, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                  \
@@ -86,7 +85,7 @@ __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
 #define queue_caller(queue, tickets, head, tail) queue, tickets, head, tail
 
 #define queue_callee(queue, tickets, head, tail)                    \
-    uint32_t *queue,                                                \
+    queue_type *queue,                                              \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tickets, \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *head,    \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tail
