@@ -3,18 +3,18 @@
 #include <cuda_runtime_api.h>
 #include "defs.cuh"
 
-template <typename Node>
+template <typename NODE>
 class BHEAP
 {
 public:
-  Node *d_heap;
+  NODE *d_heap;
   size_t *d_size;
   void print()
   {
     size_t *h_size = (size_t *)malloc(sizeof(size_t));
     CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
-    Node *h_heap = (Node *)malloc(sizeof(Node) * h_size[0]);
-    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(Node) * h_size[0], cudaMemcpyDeviceToHost));
+    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
+    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
 
     printf("heap size: %lu\n", h_size[0]);
     for (size_t i = 0; i < h_size[0]; i++)
@@ -25,18 +25,18 @@ public:
   }
 };
 
-template <typename Node>
-__device__ Node pop(BHEAP<Node> heap)
+template <typename NODE>
+__device__ NODE pop(BHEAP<NODE> heap)
 {
-  __shared__ Node min;
+  __shared__ NODE min;
   if (threadIdx.x == 0)
   {
-    Node *h = heap.d_heap;
+    NODE *h = heap.d_heap;
     size_t size = heap.d_size[0];
     if (size == 0)
     {
       printf("heap underflow!!\n");
-      min = Node(0, 0);
+      min = NODE(0, 0);
     }
     min = h[0];
     h[0] = h[size - 1];
@@ -53,7 +53,7 @@ __device__ Node pop(BHEAP<Node> heap)
       {
         break;
       }
-      Node temp = h[i];
+      NODE temp = h[i];
       h[i] = h[j];
       h[j] = temp;
       i = j;
@@ -65,24 +65,24 @@ __device__ Node pop(BHEAP<Node> heap)
   return min;
 };
 
-template <typename Node>
-__device__ void push(BHEAP<Node> bheap, Node new_Node)
+template <typename NODE>
+__device__ void push(BHEAP<NODE> bheap, NODE new_NODE)
 {
   if (threadIdx.x == 0)
   {
-    Node *heap = bheap.d_heap;
+    NODE *heap = bheap.d_heap;
     size_t size = bheap.d_size[0];
     if (size >= MAX_HEAP_SIZE)
     {
       printf("heap overflow!!\n");
       return;
     }
-    heap[size] = new_Node;
+    heap[size] = new_NODE;
     // Up heapify the heap to maintain min heap property
     size_t i = size;
     while (i > 0 && heap[i].key < heap[(i - 1) / 2].key)
     {
-      Node temp = heap[i];
+      NODE temp = heap[i];
       heap[i] = heap[(i - 1) / 2];
       heap[(i - 1) / 2] = temp;
       i = (i - 1) / 2;
@@ -92,17 +92,17 @@ __device__ void push(BHEAP<Node> bheap, Node new_Node)
   return;
 };
 
-template <typename Node>
-__device__ void batch_push(BHEAP<Node> heap, Node *new_Nodes, size_t num_Nodes)
+template <typename NODE>
+__device__ void batch_push(BHEAP<NODE> heap, NODE *new_NODEs, size_t num_NODEs)
 {
-  for (int i = 0; i < num_Nodes; i++)
+  for (int i = 0; i < num_NODEs; i++)
   {
-    push(heap, new_Nodes[i]);
+    push(heap, new_NODEs[i]);
   }
 };
 
-template <typename Node>
-__global__ void parse_queue(BHEAP<Node> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
+template <typename NODE>
+__global__ void parse_queue(BHEAP<NODE> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
 {
   if (blockIdx.x == 0)
   {
@@ -114,7 +114,7 @@ __global__ void parse_queue(BHEAP<Node> heap, d_instruction *ins_list, size_t IN
         push(heap, ins_list[iter].values[0]);
         break;
       case POP:
-        Node min = pop(heap);
+        NODE min = pop(heap);
         break;
       case BATCH_PUSH:
         batch_push(heap, ins_list[iter].values, MAX_BATCH);

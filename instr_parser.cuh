@@ -8,21 +8,21 @@
 struct instruction
 {
   TaskType type;
-  std::vector<NODE> values;
+  std::vector<node> values;
   instruction()
   {
-    values = std::vector<NODE>();
+    values = std::vector<node>();
   };
 };
 
-class instructions
+class INSTRUCTIONS
 {
 public:
   std::vector<instruction> tasks;
   FILE *ins_file;
   // Default blank constructor
-  instructions(){};
-  instructions(FILE *file)
+  INSTRUCTIONS(){};
+  INSTRUCTIONS(FILE *file)
   {
     ins_file = file;
   };
@@ -42,7 +42,7 @@ public:
       else if (strcmp(instr, "top") == 0 || strcmp(instr, "TOP") == 0)
         ins.type = TaskType(TOP);
       else
-        ins.values.push_back(NODE(float(atof(instr)), 0));
+        ins.values.push_back(node(float(atof(instr)), 0));
       instr = strtok(NULL, " ,");
     }
     return ins;
@@ -58,7 +58,7 @@ public:
       this->tasks.push_back(ins);
     }
   }
-  // iterate over ilist and print out the instructions with values
+  // iterate over ilist and print out the INSTRUCTIONS with values
   void print()
   {
     for (int i = 0; i < this->tasks.size(); i++)
@@ -95,12 +95,12 @@ public:
     uint max_batch_size = get_max_batch_size();
     for (int i = 0; i < tasks.size(); i++)
     {
-      CUDA_RUNTIME(cudaMalloc((void **)&h_tasks[i].values, sizeof(NODE) * max_batch_size));
-      CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(NODE) * max_batch_size));
-      NODE *h_values = new NODE[tasks.at(i).values.size()];
+      CUDA_RUNTIME(cudaMalloc((void **)&h_tasks[i].values, sizeof(node) * max_batch_size));
+      CUDA_RUNTIME(cudaMemset(h_tasks[i].values, 0, sizeof(node) * max_batch_size));
+      node *h_values = new node[tasks.at(i).values.size()];
       std::copy(tasks.at(i).values.begin(), tasks.at(i).values.end(), h_values);
       h_tasks[i].type = tasks.at(i).type;
-      CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(NODE) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
+      CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(node) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
       delete[] h_values;
     }
 

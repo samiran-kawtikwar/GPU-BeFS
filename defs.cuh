@@ -15,14 +15,6 @@ enum LogPriorityEnum
   none
 };
 
-struct NODE
-{
-  float key;
-  float value;
-  NODE(){};
-  __host__ __device__ NODE(float a, float b) : key(a), value(b){};
-};
-
 enum TaskType
 {
   PUSH = 0,
@@ -45,8 +37,16 @@ const char *enum_to_str(TaskType type)
     return "unknown";
 };
 
+struct node
+{
+  float key;
+  float value;
+  node(){};
+  __host__ __device__ node(float a, float b) : key(a), value(b){};
+};
+
 struct d_instruction
 {
   TaskType type;
-  NODE *values;
+  node *values;
 };
