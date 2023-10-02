@@ -102,7 +102,7 @@ __device__ void batch_push(BHEAP<NODE> heap, NODE *new_NODEs, size_t num_NODEs)
 };
 
 template <typename NODE>
-__global__ void parse_queue(BHEAP<NODE> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
+__global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
 {
   if (blockIdx.x == 0)
   {
