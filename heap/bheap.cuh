@@ -118,6 +118,8 @@ __global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t IN
         break;
       case POP:
         NODE min = pop(heap);
+        if (threadIdx.x == 0)
+          printf("popped: min: %f\n", min.key);
         break;
       case BATCH_PUSH:
         batch_push(heap, ins_list[iter].values, ins_list[iter].num_values);
@@ -163,7 +165,6 @@ __device__ void process_requests(size_t INS_LEN,
           for (uint iter = 0; iter < N_RECEPIENTS; iter++)
           {
             queue_wait_ticket(queue, tickets, head, tail, queue_size, qidx, dequeued_idx);
-
             // TODO: copy memory from queue space[dequeued_idx] to queue_space[own_idx]
             task_type = queue_space[dequeued_idx].type;
             queue_space[blockIdx.x].type = task_type;
@@ -222,7 +223,6 @@ __device__ void generate_requests(d_instruction *ins_list, size_t INS_LEN,
     {
       // uint id = iter + 1;
       __shared__ bool space_free;
-
       while (true)
       {
         if (threadIdx.x == 0)
