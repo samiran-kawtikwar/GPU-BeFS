@@ -118,8 +118,6 @@ __global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t IN
         break;
       case POP:
         NODE min = pop(heap);
-        if (threadIdx.x == 0)
-          printf("popped: min: %f\n", min.key);
         break;
       case BATCH_PUSH:
         batch_push(heap, ins_list[iter].values, ins_list[iter].num_values);
@@ -156,7 +154,6 @@ __device__ void process_requests(size_t INS_LEN,
       {
         // try dequeue
         queue_dequeue(queue, tickets, head, tail, queue_size, fork, qidx, N_RECEPIENTS);
-        printf("I am block %u, I have forked: %s\n", blockIdx.x, fork ? "true" : "false");
       }
       __syncthreads();
       if (fork)
@@ -166,7 +163,7 @@ __device__ void process_requests(size_t INS_LEN,
           for (uint iter = 0; iter < N_RECEPIENTS; iter++)
           {
             queue_wait_ticket(queue, tickets, head, tail, queue_size, qidx, dequeued_idx);
-            printf("I am block %u, I have dequeued queue_space[%u]\n", blockIdx.x, dequeued_idx);
+
             // TODO: copy memory from queue space[dequeued_idx] to queue_space[own_idx]
             task_type = queue_space[dequeued_idx].type;
             queue_space[blockIdx.x].type = task_type;
@@ -187,21 +184,12 @@ __device__ void process_requests(size_t INS_LEN,
           {
             {
             case PUSH:
-              if (threadIdx.x == 0)
-                printf("Reached push\n");
               push(heap, queue_space[blockIdx.x].values[0]);
               break;
             case POP:
               NODE min = pop(heap);
-              if (threadIdx.x == 0)
-              {
-                printf("Reached pop\n");
-                printf("popped: min: %f\n", min.key);
-              }
               break;
             case BATCH_PUSH:
-              if (threadIdx.x == 0)
-                printf("Reached batch push\n");
               batch_push(heap, queue_space[blockIdx.x].values, queue_space[blockIdx.x].batch_size);
               break;
             default:
@@ -214,7 +202,6 @@ __device__ void process_requests(size_t INS_LEN,
         if (threadIdx.x == 0)
         {
           atomicAdd(&(count), 1);
-          printf("************count : %u\n", count);
         }
       }
     }
@@ -235,11 +222,7 @@ __device__ void generate_requests(d_instruction *ins_list, size_t INS_LEN,
     {
       // uint id = iter + 1;
       __shared__ bool space_free;
-      if (threadIdx.x == 0)
-      {
-        printf("I am block %u, my task is %s\n", blockIdx.x, ins_list[iter].type == PUSH ? "push" : ins_list[iter].type == POP ? "pop"
-                                                                                                                               : "batch_push");
-      }
+
       while (true)
       {
         if (threadIdx.x == 0)
@@ -256,7 +239,6 @@ __device__ void generate_requests(d_instruction *ins_list, size_t INS_LEN,
           {
             queue_space[blockIdx.x].type = ins_list[iter].type;
             queue_space[blockIdx.x].batch_size = ins_list[iter].num_values;
-            printf("I am block %u, I have filled queue_space[%u]\n", blockIdx.x, blockIdx.x);
           }
           for (uint i = threadIdx.x; i < ins_list[iter].num_values; i += blockDim.x)
             queue_space[blockIdx.x].values[i] = ins_list[iter].values[i];

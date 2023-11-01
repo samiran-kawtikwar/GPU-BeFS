@@ -33,8 +33,6 @@ int main(int argc, char **argv)
 
   size_t ins_len = ilist.tasks.size();
   const size_t max_batch = ilist.get_max_batch_size();
-  // execKernel((parse_instr<node>), 1, 32, dev_, true, d_bheap, d_ilist, ins_len, max_batch);
-  // d_bheap.print();
 
   // Create space for queue
   size_t queue_size = 100; // To be changed later
@@ -62,7 +60,6 @@ int main(int argc, char **argv)
 
   ins_len = ilist.tasks.size();
 
-  Log(debug, "instructions length: %lu", ins_len);
   execKernel((request_manager<node>), 3 + 1, 32, dev_, true,
              d_ilist, ins_len, queue_caller(queue, tickets, head, tail), work_ready,
              queue_size, d_bheap, d_queue_space);
