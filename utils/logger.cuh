@@ -1,7 +1,8 @@
 #pragma once
-// #include "defs.cuh"
 #include <iostream>
 #include <string>
+#define __DEBUG__
+
 const char newline[] = "\n";
 const char comma[] = ", ";
 const char colon[] = ": ";
@@ -119,9 +120,7 @@ void printDeviceMatrix(const data *array, size_t nrows, size_t ncols, std::strin
     // for (size_t i = 0; i < ncols; i++)
     // {
     //   if (temp2[i] >= (int)ncols)
-    //   {
     //     cout << "Problem at row: " << i << " assignment: " << temp2[i] << endl;
-    //   }
     // }
   }
   delete[] temp;

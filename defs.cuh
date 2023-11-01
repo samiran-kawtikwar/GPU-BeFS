@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
-#define __DEBUG__
 #define MAX_HEAP_SIZE 1000000
+const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned long long int uint64;
 typedef unsigned int uint;
 
@@ -39,4 +39,14 @@ struct d_instruction
 {
   TaskType type;
   node *values;
+  size_t num_values;
+};
+
+struct queue_info
+{
+  TaskType type;
+  node *values;
+  uint32_t batch_size;  // For batch push
+  int already_occupied; // For extra overwriting checks (defined as int for atomicOr operation)
+  uint32_t id;          // For mapping with queue DON'T UPDATE
 };

@@ -30,6 +30,7 @@ public:
   {
     instruction ins;
     char *instr = strtok(line, " ,\n");
+    size_t num_values = -1;
     while (instr != NULL)
     {
       // Log(debug, "instr: %s", instr);
@@ -43,7 +44,8 @@ public:
         ins.type = TaskType(TOP);
       else
         ins.values.push_back(node(float(atof(instr)), 0));
-      instr = strtok(NULL, " ,");
+      instr = strtok(NULL, " ,\n");
+      num_values++;
     }
     return ins;
   };
@@ -64,10 +66,10 @@ public:
     for (int i = 0; i < this->tasks.size(); i++)
     {
       instruction ins = this->tasks.at(i);
-      Log(debug, "ins - type: %s, values_size: %lu", enum_to_str(ins.type), ins.values.size());
+      Log(debug, "ins - type: %s, len: %lu", enum_to_str(ins.type), ins.values.size());
       for (size_t j = 0; j < ins.values.size(); j++)
       {
-        Log<comma>(debug, "%f", ins.values.at(j));
+        Log<comma>(debug, "%f", ins.values.at(j).key);
       }
       Log<nun>(debug, "\n");
     }
@@ -101,6 +103,7 @@ public:
       std::copy(tasks.at(i).values.begin(), tasks.at(i).values.end(), h_values);
       h_tasks[i].type = tasks.at(i).type;
       CUDA_RUNTIME(cudaMemcpy(h_tasks[i].values, h_values, sizeof(node) * tasks.at(i).values.size(), cudaMemcpyHostToDevice));
+      h_tasks[i].num_values = tasks.at(i).values.size();
       delete[] h_values;
     }
 
