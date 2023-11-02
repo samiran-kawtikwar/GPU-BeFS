@@ -109,6 +109,7 @@ __global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t IN
 {
   if (blockIdx.x == 0)
   {
+    NODE min;
     for (uint iter = 0; iter < INS_LEN; iter++)
     {
       switch (ins_list[iter].type)
@@ -117,7 +118,7 @@ __global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t IN
         push(heap, ins_list[iter].values[0]);
         break;
       case POP:
-        NODE min = pop(heap);
+        min = pop(heap);
         if (threadIdx.x == 0)
           printf("popped: min: %f\n", min.key);
         break;
@@ -181,6 +182,7 @@ __device__ void process_requests(size_t INS_LEN,
         __syncthreads();
         if (blockIdx.x == 0)
         {
+          NODE min;
           switch (task_type)
           {
             {
@@ -188,7 +190,7 @@ __device__ void process_requests(size_t INS_LEN,
               push(heap, queue_space[blockIdx.x].values[0]);
               break;
             case POP:
-              NODE min = pop(heap);
+              min = pop(heap);
               break;
             case BATCH_PUSH:
               batch_push(heap, queue_space[blockIdx.x].values, queue_space[blockIdx.x].batch_size);

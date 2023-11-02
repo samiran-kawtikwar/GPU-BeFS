@@ -46,7 +46,7 @@ struct queue_info
 {
   TaskType type;
   node *values;
-  uint32_t batch_size;  // For batch push
+  uint batch_size;      // For batch push
   int already_occupied; // For extra overwriting checks (defined as int for atomicOr operation)
-  uint32_t id;          // For mapping with queue DON'T UPDATE
+  uint id;              // For mapping with queue DON'T UPDATE
 };

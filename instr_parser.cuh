@@ -30,7 +30,6 @@ public:
   {
     instruction ins;
     char *instr = strtok(line, " ,\n");
-    size_t num_values = -1;
     while (instr != NULL)
     {
       // Log(debug, "instr: %s", instr);
@@ -45,7 +44,6 @@ public:
       else
         ins.values.push_back(node(float(atof(instr)), 0));
       instr = strtok(NULL, " ,\n");
-      num_values++;
     }
     return ins;
   };
