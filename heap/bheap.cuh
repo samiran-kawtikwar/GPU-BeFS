@@ -203,10 +203,9 @@ __device__ void process_requests(size_t INS_LEN,
         }
         __syncthreads();
         if (threadIdx.x == 0)
-        {
           atomicAdd(&(count), 1);
-        }
       }
+      __syncthreads();
     }
     return;
   }
@@ -223,7 +222,6 @@ __device__ void generate_requests(d_instruction *ins_list, size_t INS_LEN,
   {
     for (uint iter = blockIdx.x - 1; iter < INS_LEN; iter += gridDim.x - 1)
     {
-      // uint id = iter + 1;
       __shared__ bool space_free;
       while (true)
       {
