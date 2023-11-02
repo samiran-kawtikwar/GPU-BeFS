@@ -35,8 +35,8 @@ int main(int argc, char **argv)
   const size_t max_batch = ilist.get_max_batch_size();
 
   // Create space for queue
-  size_t queue_size = 100; // To be changed later
-  size_t num_nodes = 100;  // To be changed later
+  size_t queue_size = 100; // To be changed later -- equals grid dimension of request manager
+  size_t num_nodes = 100;  // To be changed later -- equals maximum multiplication factor
   queue_info *d_queue_space, *h_queue_space;
   CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, queue_size * sizeof(queue_info)));
   h_queue_space = (queue_info *)malloc(queue_size * sizeof(queue_info));
