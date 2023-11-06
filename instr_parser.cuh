@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include "defs.cuh"
 #include <vector>

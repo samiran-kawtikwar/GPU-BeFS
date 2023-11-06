@@ -1,4 +1,5 @@
 #pragma once
+
 #include <cuda.h>
 #include "logger.cuh"
 
