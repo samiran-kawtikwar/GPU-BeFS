@@ -1,9 +1,12 @@
 #pragma once
+
 #include <vector>
 #define MAX_HEAP_SIZE 1000000
+#define MAX_TOKENS 100
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned long long int uint64;
 typedef unsigned int uint;
+typedef float nodetype; // To be changed from float to required data type
 
 enum TaskType
 {
@@ -30,9 +33,9 @@ const char *enum_to_str(TaskType type)
 struct node
 {
   float key;
-  float value;
+  nodetype *value;
   node(){};
-  __host__ __device__ node(float a, float b) : key(a), value(b){};
+  __host__ __device__ node(float a, nodetype *b) : key(a), value(b){};
 };
 
 struct d_instruction
