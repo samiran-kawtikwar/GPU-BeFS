@@ -54,12 +54,17 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, queue_size * sizeof(queue_info), cudaMemcpyHostToDevice));
   delete[] h_queue_space;
 
-  // Create space for node_info
-  size_t max_node_length = 100; // To be changed later -- equals problem size
+  // Create space for node_info and addresses
+  size_t max_node_length = MAX_TOKENS; // To be changed later -- equals problem size
   uint memory_queue_len = MAX_HEAP_SIZE;
+  uint max_workers = 3;
   nodetype **d_node_space;
   CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * max_node_length * sizeof(nodetype)));
-  CUDA_RUNTIME(cudaMemset(d_node_space, 0, memory_queue_len * max_node_length * sizeof(nodetype)));
+  CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * max_node_length * sizeof(nodetype)));
+
+  uint *d_address_space;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, max_workers * max_node_length * sizeof(uint)));
+  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, max_workers * max_node_length * sizeof(uint)));
 
   // Create MPMC queue for handling memory requests
   cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready_memory = nullptr;
@@ -69,8 +74,34 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemset((void *)work_ready_memory, 0, memory_queue_len * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));
 
   // Populate memory queue
-  execKernel(populate_memory_queue, memory_queue_len, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail), memory_queue_len, work_ready_memory);
-  // execKernel(check_queue, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail), work_ready_memory, memory_queue_len);
+  execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+             memory_queue_len, work_ready_memory);
+  execKernel(check_queue_global, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+             memory_queue_len, work_ready_memory);
+  // execKernel(get_queue_length_global, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail));
+
+  // execKernel(get_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+  //            memory_queue_len, max_node_length, d_address_space, work_ready_memory);
+
+  execKernel(memory_test, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+             memory_queue_len, max_node_length, d_address_space, d_address_space, work_ready_memory);
+
+  execKernel(get_queue_length_global, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail));
+
+  // print d_address_space directly from unified memory
+  for (size_t i = 0; i < max_workers; i++)
+  {
+    printf("Worker %d: \n", i);
+    for (size_t j = 0; j < max_node_length; j++)
+    {
+      printf("%d, ", d_address_space[i * MAX_TOKENS + j]);
+    }
+    printf("\n\n");
+  }
+
+  // execKernel(free_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+  //            memory_queue_len, d_address_space);
+  // execKernel(get_queue_length_global, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail));
 
   // Create MPMC queue for handling heap requests
   cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready_requests = nullptr;
@@ -81,7 +112,7 @@ int main(int argc, char **argv)
 
   ins_len = ilist.tasks.size();
 
-  execKernel((request_manager<node>), 3 + 1, 32, dev_, true,
+  execKernel((request_manager<node>), max_workers + 1, 32, dev_, true,
              d_ilist, ins_len, queue_caller(request_queue, tickets, head, tail), work_ready_requests,
              queue_size, d_bheap, d_queue_space);
   d_bheap.print();
