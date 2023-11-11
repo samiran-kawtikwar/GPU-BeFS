@@ -1,29 +1,47 @@
 #include <stdio.h>
 #include <cmath>
 #include <vector>
-#include "utils/logger.cuh"
-#include "instr_parser.cuh"
 #include "heap/bheap.cuh"
+#include "utils/logger.cuh"
 #include "utils/cuda_utils.cuh"
+#include "utils/timer.h"
 #include "queue/queue.cuh"
 #include "request_manager.cuh"
 #include "memory_manager.cuh"
 #include "defs.cuh"
 
+#include "LAP/config.h"
+#include "LAP/cost_generator.h"
+#include "LAP/device_utils.cuh"
+#include "LAP/Hung_lap.cuh"
+#include "LAP/lap_kernels.cuh"
+
 int main(int argc, char **argv)
 {
   Log(debug, "Starting program");
-  uint dev_ = 0;
+  Config config = parseArgs(argc, argv);
+  printConfig(config);
+  int dev_ = config.deviceId;
+  CUDA_RUNTIME(cudaDeviceReset());
   CUDA_RUNTIME(cudaSetDevice(dev_));
-  const char *fileName = argv[1];
-  Log(debug, "File name: %s", fileName);
 
-  FILE *fptr = fopen(fileName, "r");
-  if (fptr == NULL)
-  {
-    Log(error, "%s file failed to open.", fileName);
-    exit(-1);
-  }
+  typedef uint data;
+  double time;
+  Timer t;
+  data *h_costs = generate_cost<data>(config, config.seed);
+  time = t.elapsed();
+  Log(debug, "cost generation time %f s", time);
+  t.reset();
+
+  LAP<data> *lap = new LAP<data>(h_costs, config.user_n, dev_);
+  Log(debug, "LAP object generated succesfully");
+  lap->solve();
+  time = t.elapsed();
+  data UB = lap->objective;
+
+  Log(debug, "LAP solved succesfully, objective %u\n", (uint)UB);
+
+  /*
   INSTRUCTIONS ilist;
   ilist.populate_ins_from_file(fptr);
   ilist.print();
@@ -125,6 +143,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(work_ready_memory));
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
+  */
 
   return 0;
 }

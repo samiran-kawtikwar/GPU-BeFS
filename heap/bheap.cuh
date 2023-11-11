@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/logger.cuh"
+#include "../utils/cuda_utils.cuh"
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"

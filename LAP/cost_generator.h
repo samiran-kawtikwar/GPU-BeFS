@@ -5,8 +5,8 @@
 #include <fstream>
 #include "config.h"
 #include "../utils/timer.h"
-#include "logger.cuh"
-#include "defs.cuh"
+#include "../utils/logger.cuh"
+#include "../defs.cuh"
 
 using namespace std;
 

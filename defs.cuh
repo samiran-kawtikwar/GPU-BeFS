@@ -1,8 +1,11 @@
 #pragma once
 
-#include <vector>
+#define __DEBUG__
 #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
+#define MAX_DATA 1E7
+#define eps 1e-6
+
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned long long int uint64;
 typedef unsigned int uint;
