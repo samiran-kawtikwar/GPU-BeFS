@@ -8,8 +8,7 @@
 #include "heap/bheap.cuh"
 
 __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
-                                  uint memory_queue_len,
-                                  cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready)
+                                  uint memory_queue_len)
 {
   if (threadIdx.x == 0)
   {
@@ -19,12 +18,11 @@ __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
 
 // Should always be called by single block
 __device__ void check_queue(queue_callee(queue, tickets, head, tail),
-                            cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready,
-                            uint memory_queue_len)
+                            uint len)
 {
   if (threadIdx.x == 0)
   {
-    bool full = queue_full(queue, tickets, head, tail, memory_queue_len);
+    bool full = queue_full(queue, tickets, head, tail, len);
     printf("Queue full: %s\n", full ? "true" : "false");
   }
 }
@@ -43,8 +41,7 @@ __device__ void queue_length(queue_callee(queue, tickets, head, tail))
 __device__ void get_memory(queue_callee(queue, tickets, head, tail),
                            uint queue_size,
                            uint n_tokens,
-                           uint *dequeued_idx,
-                           cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready)
+                           uint *dequeued_idx)
 {
   __shared__ bool fork;
   __shared__ uint qidx, count;
@@ -98,11 +95,10 @@ __device__ void free_memory(queue_callee(queue, tickets, head, tail),
 __global__ void get_memory_global(queue_callee(queue, tickets, head, tail),
                                   uint queue_size,
                                   uint n_tokens,
-                                  uint *dequeued_idx,
-                                  cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready)
+                                  uint *dequeued_idx)
 {
   get_memory(queue_caller(queue, tickets, head, tail), queue_size, n_tokens,
-             &dequeued_idx[blockIdx.x * MAX_TOKENS], work_ready);
+             &dequeued_idx[blockIdx.x * MAX_TOKENS]);
 }
 
 __global__ void free_memory_global(queue_callee(queue, tickets, head, tail),
@@ -113,11 +109,10 @@ __global__ void free_memory_global(queue_callee(queue, tickets, head, tail),
 }
 
 __global__ void check_queue_global(queue_callee(queue, tickets, head, tail),
-                                   uint queue_size,
-                                   cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready)
+                                   uint queue_size)
 {
   if (blockIdx.x == 0)
-    check_queue(queue_caller(queue, tickets, head, tail), work_ready, queue_size);
+    check_queue(queue_caller(queue, tickets, head, tail), queue_size);
 }
 
 __global__ void get_queue_length_global(queue_callee(queue, tickets, head, tail))
@@ -129,14 +124,13 @@ __global__ void get_queue_length_global(queue_callee(queue, tickets, head, tail)
 __global__ void memory_test(queue_callee(queue, tickets, head, tail),
                             uint queue_size,
                             uint n_tokens, uint *dequeued_idx,
-                            uint *free_index,
-                            cuda::atomic<uint32_t, cuda::thread_scope_device> *work_ready)
+                            uint *free_index)
 {
   if (threadIdx.x == 0)
     printf("Block %u, starting get memory\n", blockIdx.x);
 
   get_memory(queue_caller(queue, tickets, head, tail), queue_size, n_tokens,
-             &dequeued_idx[blockIdx.x * MAX_TOKENS], work_ready);
+             &dequeued_idx[blockIdx.x * MAX_TOKENS]);
   __syncthreads();
   if (threadIdx.x == 0)
     printf("Block %u, finished get memory\n", blockIdx.x);
