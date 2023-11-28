@@ -7,8 +7,6 @@
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
 
-__device__ uint count = 0;
-
 template <typename NODE>
 class BHEAP
 {
@@ -33,9 +31,8 @@ public:
 
 // Heap operations: push, pop, batch_push
 template <typename NODE>
-__device__ NODE pop(BHEAP<NODE> heap)
+__device__ void pop(BHEAP<NODE> heap, NODE &min)
 {
-  __shared__ NODE min;
   if (threadIdx.x == 0)
   {
     NODE *h = heap.d_heap;
@@ -69,7 +66,6 @@ __device__ NODE pop(BHEAP<NODE> heap)
     heap.d_size[0]--;
   }
   __syncthreads();
-  return min;
 };
 
 template <typename NODE>
@@ -95,6 +91,7 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
       i = (i - 1) / 2;
     }
     bheap.d_size[0]++;
+    // printf("pushed: %f: heap size: %lu\n", new_node.key, bheap.d_size[0]);
   }
   return;
 };
