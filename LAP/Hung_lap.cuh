@@ -6,20 +6,20 @@
 #include <thrust/reduce.h>
 #include <thrust/execution_policy.h>
 
-template <typename data>
+template <typename cost_type>
 class LAP
 {
 private:
   int dev_;
   size_t size_, h_nrows, h_ncols;
-  data *cost_;
+  cost_type *cost_;
   uint num_blocks_4, num_blocks_reduction;
 
 public:
-  data objective;
-  GLOBAL_HANDLE<data> gh;
+  cost_type objective;
+  GLOBAL_HANDLE<cost_type> gh;
   // constructor
-  LAP(data *cost, size_t size, int dev = 0) : cost_(cost), dev_(dev), size_(size)
+  LAP(cost_type *cost, size_t size, int dev = 0) : cost_(cost), dev_(dev), size_(size)
   {
     h_nrows = size;
     h_ncols = size;
@@ -45,16 +45,16 @@ public:
     CUDA_RUNTIME(cudaMemcpyToSymbol(n_blocks_step_4, &gh.nb4, sizeof(n_blocks_step_4)));
     const uint temp4 = columns_per_block_step_4 * pow(2, ceil(log2(size_)));
     // Log(debug, "dbs: %u", temp4);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(data_block_size, &temp4, sizeof(data_block_size)));
+    CUDA_RUNTIME(cudaMemcpyToSymbol(cost_type_block_size, &temp4, sizeof(cost_type_block_size)));
     const uint temp5 = temp2 + (uint)ceil(log2(columns_per_block_step_4));
     // Log(debug, "l2dbs: %u", temp5);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(log2_data_block_size, &temp5, sizeof(log2_data_block_size)));
+    CUDA_RUNTIME(cudaMemcpyToSymbol(log2_cost_type_block_size, &temp5, sizeof(log2_cost_type_block_size)));
     // Log(debug, " nb4: %u\n nbr: %u\n dbs: %u\n l2dbs %u\n", gh.nb4, num_blocks_reduction, temp4, temp5);
     // memory allocations
-    // CUDA_RUNTIME(cudaMalloc((void **)&gh.cost, size * size * sizeof(data)));
-    CUDA_RUNTIME(cudaMalloc((void **)&gh.slack, size * size * sizeof(data)));
-    CUDA_RUNTIME(cudaMalloc((void **)&gh.min_in_rows, h_nrows * sizeof(data)));
-    CUDA_RUNTIME(cudaMalloc((void **)&gh.min_in_cols, h_ncols * sizeof(data)));
+    // CUDA_RUNTIME(cudaMalloc((void **)&gh.cost, size * size * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMalloc((void **)&gh.slack, size * size * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMalloc((void **)&gh.min_in_rows, h_nrows * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMalloc((void **)&gh.min_in_cols, h_ncols * sizeof(cost_type)));
 
     CUDA_RUNTIME(cudaMalloc((void **)&gh.zeros, h_nrows * h_ncols * sizeof(size_t)));
     CUDA_RUNTIME(cudaMalloc((void **)&gh.zeros_size_b, num_blocks_4 * sizeof(size_t)));
@@ -65,13 +65,13 @@ public:
     CUDA_RUNTIME(cudaMalloc((void **)&gh.column_of_prime_at_row, h_nrows * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&gh.row_of_green_at_column, h_ncols * sizeof(int)));
 
-    // CUDA_RUNTIME(cudaMalloc((void **)&gh.max_in_mat_row, h_nrows * sizeof(data)));
-    // CUDA_RUNTIME(cudaMalloc((void **)&gh.max_in_mat_col, h_ncols * sizeof(data)));
-    CUDA_RUNTIME(cudaMalloc((void **)&gh.d_min_in_mat_vect, num_blocks_reduction * sizeof(data)));
-    CUDA_RUNTIME(cudaMallocManaged((void **)&gh.d_min_in_mat, 1 * sizeof(data)));
+    // CUDA_RUNTIME(cudaMalloc((void **)&gh.max_in_mat_row, h_nrows * sizeof(cost_type)));
+    // CUDA_RUNTIME(cudaMalloc((void **)&gh.max_in_mat_col, h_ncols * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMalloc((void **)&gh.d_min_in_mat_vect, num_blocks_reduction * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&gh.d_min_in_mat, 1 * sizeof(cost_type)));
 
-    CUDA_RUNTIME(cudaMemcpy(gh.slack, cost_, size * size * sizeof(data), cudaMemcpyDefault));
-    // CUDA_RUNTIME(cudaMemcpy(gh.cost, cost_, size * size * sizeof(data), cudaMemcpyDefault));
+    CUDA_RUNTIME(cudaMemcpy(gh.slack, cost_, size * size * sizeof(cost_type), cudaMemcpyDefault));
+    // CUDA_RUNTIME(cudaMemcpy(gh.cost, cost_, size * size * sizeof(cost_type), cudaMemcpyDefault));
 
     CUDA_RUNTIME(cudaDeviceSynchronize());
   };
@@ -163,7 +163,7 @@ public:
         // step 6
         // printDebugArray(gh.cover_column, size_, "Column cover");
         // printDebugArray(gh.cover_row, size_, "Row cover");
-        execKernel((min_reduce_kernel1<data, n_threads_reduction>),
+        execKernel((min_reduce_kernel1<cost_type, n_threads_reduction>),
                    num_blocks_reduction, n_threads_reduction, dev_, false,
                    gh.slack, gh.d_min_in_mat_vect, h_nrows * h_ncols, gh);
 
@@ -207,10 +207,10 @@ public:
     printf("Obj val: %u\n", objective);
   };
 
-  bool passes_sanity_test(data *d_min)
+  bool passes_sanity_test(cost_type *d_min)
   {
-    data temp;
-    CUDA_RUNTIME(cudaMemcpy(&temp, d_min, 1 * sizeof(data), cudaMemcpyDeviceToHost));
+    cost_type temp;
+    CUDA_RUNTIME(cudaMemcpy(&temp, d_min, 1 * sizeof(cost_type), cudaMemcpyDeviceToHost));
     if (temp <= 0)
     {
       Log(critical, "minimum element in matrix is non positive => infinite loop condition !!!");

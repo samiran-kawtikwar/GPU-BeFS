@@ -6,13 +6,13 @@ __managed__ __device__ int n_matches;      // Used in step 3 to count the number
 __managed__ __device__ bool goto_5;        // After step 4, goto step 5?
 __managed__ __device__ bool repeat_kernel; // Needs to repeat the step 2 and step 4 kernel?
 
-template <typename data = int>
+template <typename cost_type = int>
 struct GLOBAL_HANDLE
 {
-  data *cost;
-  data *slack;
-  data *min_in_rows;
-  data *min_in_cols;
+  cost_type *cost;
+  cost_type *slack;
+  cost_type *min_in_rows;
+  cost_type *min_in_cols;
 
   size_t *zeros, *zeros_size_b;
   int *row_of_star_at_column;
@@ -20,7 +20,7 @@ struct GLOBAL_HANDLE
   int *cover_row, *cover_column;
   int *column_of_prime_at_row, *row_of_green_at_column;
 
-  data *max_in_mat_row, *max_in_mat_col, *d_min_in_mat_vect, *d_min_in_mat;
+  cost_type *max_in_mat_row, *max_in_mat_col, *d_min_in_mat_vect, *d_min_in_mat;
   int row_mask;
   uint nb4;
 

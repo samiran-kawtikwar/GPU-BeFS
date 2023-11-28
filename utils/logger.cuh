@@ -73,12 +73,12 @@ void Log(LogPriorityEnum l, const char *f, Args... args)
 
 // #define Log(l_, f_, ...)printf((f_), __VA_ARGS__);
 
-template <typename data = int>
-void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
+template <typename cost_type = int>
+void printDeviceArray(const cost_type *d_array, size_t len, std::string name = NULL)
 {
 
   using namespace std;
-  data *temp = new data[len];
+  cost_type *temp = new cost_type[len];
 
   if (name != "NULL")
   {
@@ -89,7 +89,7 @@ void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
   }
   if (len >= 1)
   {
-    CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(data), cudaMemcpyDefault));
+    CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(cost_type), cudaMemcpyDefault));
     for (size_t i = 0; i < len - 1; i++)
     {
       cout << temp[i] << ',';
@@ -99,12 +99,12 @@ void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
   delete[] temp;
 }
 
-template <typename data = uint>
-void printDeviceMatrix(const data *array, size_t nrows, size_t ncols, std::string name = NULL)
+template <typename cost_type = uint>
+void printDeviceMatrix(const cost_type *array, size_t nrows, size_t ncols, std::string name = NULL)
 {
   using namespace std;
-  data *temp = new data[nrows * ncols];
-  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(data), cudaMemcpyDefault));
+  cost_type *temp = new cost_type[nrows * ncols];
+  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(cost_type), cudaMemcpyDefault));
 
   if (name != "NULL")
   {
@@ -112,7 +112,7 @@ void printDeviceMatrix(const data *array, size_t nrows, size_t ncols, std::strin
   }
   for (size_t j = 0; j < nrows; j++)
   {
-    data *temp2 = &temp[j * ncols];
+    cost_type *temp2 = &temp[j * ncols];
     for (size_t i = 0; i < ncols - 1; i++)
     {
       cout << temp2[i] << ", ";

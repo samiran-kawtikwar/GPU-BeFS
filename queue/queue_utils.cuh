@@ -229,7 +229,7 @@ __host__ __device__ void swap_ele(T &a, T &b)
 // }
 
 // template <typename T>
-// void quicksort(T *key, T *data, T start, T end)
+// void quicksort(T *key, T *cost_type, T start, T end)
 // {
 // 	if ((end - start + 1) > 1)
 // 	{
@@ -250,15 +250,15 @@ __host__ __device__ void swap_ele(T &a, T &b)
 // 				T tmpKey = key[left];
 // 				key[left] = key[right];
 // 				key[right] = tmpKey;
-// 				T tmpData = data[left];
-// 				data[left] = data[right];
-// 				data[right] = tmpData;
+// 				T tmpData = cost_type[left];
+// 				cost_type[left] = cost_type[right];
+// 				cost_type[right] = tmpData;
 // 				left = left + 1;
 // 				right = right - 1;
 // 			}
 // 		}
-// 		quicksort(key, data, start, right);
-// 		quicksort(key, data, left, end);
+// 		quicksort(key, cost_type, start, right);
+// 		quicksort(key, cost_type, left, end);
 // 	}
 // }
 
