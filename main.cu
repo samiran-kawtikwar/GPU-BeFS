@@ -18,7 +18,7 @@
 
 int main(int argc, char **argv)
 {
-  Log(debug, "Starting program");
+  Log(info, "Starting program");
   Config config = parseArgs(argc, argv);
   printConfig(config);
   int dev_ = config.deviceId;
@@ -31,23 +31,29 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaDeviceReset());
   CUDA_RUNTIME(cudaSetDevice(dev_));
 
-  double time;
-  Timer t;
   cost_type *h_costs = generate_cost<cost_type>(config, config.seed);
+
+  // print h_costs
+  // for (size_t i = 0; i < psize; i++)
+  // {
+  //   for (size_t j = 0; j < psize; j++)
+  //   {
+  //     printf("%u, ", h_costs[i * psize + j]);
+  //   }
+  //   printf("\n");
+  // }
   cost_type *d_costs;
-  time = t.elapsed();
-  Log(debug, "cost generation time %f s", time);
+
   CUDA_RUNTIME(cudaMalloc((void **)&d_costs, psize * psize * sizeof(cost_type)));
   CUDA_RUNTIME(cudaMemcpy(d_costs, h_costs, psize * psize * sizeof(cost_type), cudaMemcpyHostToDevice));
-  t.reset();
 
   LAP<cost_type> *lap = new LAP<cost_type>(h_costs, psize, dev_);
-  Log(debug, "LAP object generated succesfully");
   lap->solve();
-  time = t.elapsed();
-  cost_type UB = lap->objective;
+  const cost_type UB = lap->objective;
 
-  Log(debug, "LAP solved succesfully, objective %u\n", (uint)UB);
+  Log(info, "LAP solved succesfully, objective %u\n", (uint)UB);
+  lap->print_solution();
+  delete lap;
   Log(debug, "solving LAP with branching");
 
   // Create BHEAP on device
@@ -112,7 +118,8 @@ int main(int argc, char **argv)
              psize, d_address_space, d_node_space,
              d_costs, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
-             d_queue_space, d_work_space, d_bheap);
+             d_queue_space, d_work_space, d_bheap,
+             UB);
 
   // print d_address_space directly from unified memory
   for (size_t i = 0; i < 2; i++)
@@ -126,16 +133,16 @@ int main(int argc, char **argv)
   }
   d_bheap.print();
 
-  // add a dummy vector add kernel for testing kernel launch
-  // execKernel(dummy_vector_add, 1, 512, dev_, true, d_costs, psize * psize);
-
   execKernel(branch_n_bound, psize + 1, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              psize, d_address_space, d_node_space,
              d_costs, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
-             d_queue_space, d_work_space, d_bheap);
+             d_queue_space, d_work_space, d_bheap,
+             UB);
 
+  printf("\n");
+  d_bheap.print_size();
   /*
   // execKernel(free_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
   //            memory_queue_len, d_address_space);

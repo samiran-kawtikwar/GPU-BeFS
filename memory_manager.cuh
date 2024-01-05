@@ -70,9 +70,12 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
       }
       else
       {
-        uint size = *tail_queue - *head_queue;
-        if (size == 0)
-          printf("Memory queue empty, ran out of space :(\n Queue size: %u\n", size);
+        uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
+        if (size < n_tokens)
+        {
+          printf("Memory queue empty, block %u ran out of space :(\n", blockIdx.x);
+          asm("exit;");
+        }
       }
     }
     __syncthreads();
