@@ -27,6 +27,15 @@ public:
     }
     printf("\n");
   }
+  void print_size()
+  {
+    size_t *h_size = (size_t *)malloc(sizeof(size_t));
+    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
+    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
+    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
+
+    printf("heap size: %lu\n", h_size[0]);
+  }
 };
 
 // Heap operations: push, pop, batch_push

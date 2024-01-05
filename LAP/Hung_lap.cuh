@@ -206,7 +206,15 @@ public:
     }
     printf("Obj val: %u\n", objective);
   };
-
+  void print_solution()
+  {
+    for (uint r = 0; r < h_nrows; r++)
+    {
+      int c = gh.column_of_star_at_row[r];
+      if (c >= 0)
+        printf("c = %d, r = %d\n", r, c);
+    }
+  }
   bool passes_sanity_test(cost_type *d_min)
   {
     cost_type temp;
