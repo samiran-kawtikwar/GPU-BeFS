@@ -18,7 +18,7 @@ static void usage()
   fprintf(stderr,
           "\nUsage: [options]\n"
           "\n-n <size of the problem>"
-          "\n-f range-fracrtion"
+          "\n-f range-fraction"
           "\n-d <deviceId"
           "\n-s <seed-value>"
           "\n");
