@@ -20,7 +20,7 @@ enum LogPriorityEnum
 };
 
 template <const char *END = newline, typename... Args>
-void Log(LogPriorityEnum l, const char *f, Args... args)
+__host__ __forceinline__ void Log(LogPriorityEnum l, const char *f, Args... args)
 {
 
   bool print = true;
@@ -71,7 +71,47 @@ void Log(LogPriorityEnum l, const char *f, Args... args)
   }
 }
 
-// #define Log(l_, f_, ...)printf((f_), __VA_ARGS__);
+template <typename... Args>
+__device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... args)
+{
+
+  bool print = true;
+#ifndef __DEBUG__
+  if (l == debug)
+  {
+    print = false;
+  }
+#endif // __DEBUG__
+
+  if (print)
+  {
+    // Line Color Set
+    switch (l)
+    {
+    case critical:
+      printf("\033[1;31m"); // Set the text to the color red.
+      break;
+    case warn:
+      printf("\033[1;33m"); // Set the text to the color brown.
+      break;
+    case error:
+      printf("\033[1;31m"); // Set the text to the color red.
+      break;
+    case info:
+      printf("\033[1;32m"); // Set the text to the color green.
+      break;
+    case debug:
+      printf("\033[1;34m"); // Set the text to the color blue.
+      break;
+    default:
+      printf("\033[0m"); // Resets the text to default color.
+      break;
+    }
+
+    printf(f, args...);
+    printf("\033[0m");
+  }
+}
 
 template <typename cost_type = int>
 void printDeviceArray(const cost_type *d_array, size_t len, std::string name = NULL)
