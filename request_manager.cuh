@@ -8,6 +8,7 @@
 #include "heap/bheap.cuh"
 
 __device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached = false;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow = false;
 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
@@ -26,8 +27,8 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
   while (
       // count < INS_LEN &&
       //  head_queue->load(cuda::memory_order_relaxed) != tail_queue->load(cuda::memory_order_relaxed) &&
-      !opt_reached.load(cuda::memory_order_relaxed) /*&&
-      invalid_count < 1*/
+      !opt_reached.load(cuda::memory_order_relaxed) && !heap_overflow.load(cuda::memory_order_relaxed)
+      //&& invalid_count < 1
   )
   {
     // Dequeue here
@@ -118,7 +119,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             printf("\033[1;34mProcessed %u requests\033[0m\n", count);
           invalid_count = 0;
 
-          printf("Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
+          // printf("Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
         }
         // __syncthreads();
         // if (size == 0)
@@ -265,11 +266,11 @@ __device__ void generate_request_block(const d_instruction ins,
     }
     __syncthreads();
 
-    // optimality reached while a block is waiting for a pop
-    if (opt_reached.load(cuda::memory_order_relaxed))
+    // optimality reached while a block is waiting for a request
+    if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
     {
       if (threadIdx.x == 0)
-        printf("Optimality reached while waiting to send pop for block %u\n", blockIdx.x);
+        printf("Termination reached while waiting to send %s for block %u\n", getTextForEnum(ins.type), blockIdx.x);
       return;
     }
   } while (ns = my_sleep(ns));

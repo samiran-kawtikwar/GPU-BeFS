@@ -77,7 +77,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   {
     uint ns = 8;
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
-    while (!opt_reached.load(cuda::memory_order_relaxed))
+    while (!opt_reached.load(cuda::memory_order_relaxed) &&
+           !heap_overflow.load(cuda::memory_order_relaxed))
     {
       // pop a node from the bheap
       send_requests(POP, 0, NULL,
@@ -86,38 +87,38 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       __syncthreads();
 
       // Wait for POP to be done
-      __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
-      if (threadIdx.x == 0)
-      {
-        pop_reset = true;
-      }
-      __syncthreads();
+      // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
+      // if (threadIdx.x == 0)
+      // {
+      //   pop_reset = true;
+      // }
+      // __syncthreads();
       do
       {
         if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
         {
-          if (threadIdx.x == 0)
-          {
-            printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
-          }
-          __syncthreads();
+          // if (threadIdx.x == 0)
+          // {
+          //   printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
+          // }
+          // __syncthreads();
           break;
         }
         __syncthreads();
         // optimality reached while a block is waiting for a pop
-        if (threadIdx.x == 0 && pop_reset)
-        {
-          pop_reset = false;
-          printf("block %u is waiting for pop\n", blockIdx.x);
-        }
-        __syncthreads();
-        if (opt_reached.load(cuda::memory_order_relaxed))
+        // if (threadIdx.x == 0 && pop_reset)
+        // {
+        //   pop_reset = false;
+        // printf("block %u is waiting for pop\n", blockIdx.x);
+        // }
+        // __syncthreads();
+        if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
         {
           if (threadIdx.x == 0)
-            printf("Optimality reached while waiting for pop for block %u\n", blockIdx.x);
+            printf("Termination reached while waiting for pop for block %u\n", blockIdx.x);
+          __syncthreads();
           return;
         }
-
       } while (ns = my_sleep(ns));
       __syncthreads();
       // copy from queue space to work space
@@ -143,53 +144,56 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, psize - lvl,
                    my_addresses);
 
-        __shared__ uint nfail;
-        if (threadIdx.x == 0)
-          nfail = 0;
-        __syncthreads();
-        for (uint i = threadIdx.x; i < psize - lvl; i += blockDim.x)
+        if (!heap_overflow.load(cuda::memory_order_relaxed))
         {
-          node_info *b = &node_space[my_addresses[i]];
-          for (uint j = 0; j < psize; j++)
-            b->fixed_assignments[j] = a[0].value->fixed_assignments[j];
-          b->LB = a[0].value->LB;
+          __shared__ uint nfail;
+          if (threadIdx.x == 0)
+            nfail = 0;
+          __syncthreads();
+          for (uint i = threadIdx.x; i < psize - lvl; i += blockDim.x)
+          {
+            node_info *b = &node_space[my_addresses[i]];
+            for (uint j = 0; j < psize; j++)
+              b->fixed_assignments[j] = a[0].value->fixed_assignments[j];
+            b->LB = a[0].value->LB;
 
-          // fix further assignments
-          if (b->fixed_assignments[i] == 0)
-          {
-            b->fixed_assignments[i] = lvl + 1;
-          }
-          else
-          {
-            uint offset = atomicAdd(&nfail, 1);
-            // find appropriate index
-            uint prog = 0, index = psize - lvl;
-            for (uint j = psize - lvl; j < psize; j++)
+            // fix further assignments
+            if (b->fixed_assignments[i] == 0)
             {
-              if (b->fixed_assignments[j] == 0)
-              {
-                if (prog == offset)
-                {
-                  index = j;
-                  break;
-                }
-                prog++;
-              }
+              b->fixed_assignments[i] = lvl + 1;
             }
-            b->fixed_assignments[index] = lvl + 1;
+            else
+            {
+              uint offset = atomicAdd(&nfail, 1);
+              // find appropriate index
+              uint prog = 0, index = psize - lvl;
+              for (uint j = psize - lvl; j < psize; j++)
+              {
+                if (b->fixed_assignments[j] == 0)
+                {
+                  if (prog == offset)
+                  {
+                    index = j;
+                    break;
+                  }
+                  prog++;
+                }
+              }
+              b->fixed_assignments[index] = lvl + 1;
+            }
+            b->level = lvl + 1;
+            a[i].value = b;
+            a[i].key = b->LB;
           }
-          b->level = lvl + 1;
-          a[i].value = b;
-          a[i].key = b->LB;
+          __syncthreads();
+          // push children to bheap
+          // if (threadIdx.x == 0)
+          //   printf("Pushing for block %u with bound %f\n", blockIdx.x, a[0].key);
+          // __syncthreads();
+          send_requests(BATCH_PUSH, psize - lvl, a,
+                        queue_caller(request_queue, tickets, head, tail),
+                        request_queue_size, queue_space);
         }
-        __syncthreads();
-        // push children to bheap
-        if (threadIdx.x == 0)
-          printf("Pushing for block %u with bound %f\n", blockIdx.x, a[0].key);
-        __syncthreads();
-        send_requests(BATCH_PUSH, psize - lvl, a,
-                      queue_caller(request_queue, tickets, head, tail),
-                      request_queue_size, queue_space);
       }
       else if (a[0].value->LB == UB)
       {
@@ -210,6 +214,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
     process_requests_bnb(queue_caller(request_queue, tickets, head, tail), request_queue_size,
                          bheap, queue_space);
   }
+  __syncthreads();
   if (threadIdx.x == 0)
     printf("Block %u is done\n", blockIdx.x);
 }

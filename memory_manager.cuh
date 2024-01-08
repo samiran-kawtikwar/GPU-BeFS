@@ -49,7 +49,7 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
   if (threadIdx.x == 0)
     count = 0;
   __syncthreads();
-  while (count < n_tokens)
+  while (count < n_tokens && !heap_overflow.load(cuda::memory_order_relaxed))
   {
     if (threadIdx.x == 0)
     {
@@ -74,7 +74,7 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
         if (size < n_tokens)
         {
           printf("Memory queue empty, block %u ran out of space :(\n", blockIdx.x);
-          asm("exit;");
+          heap_overflow.store(true, cuda::memory_order_release);
         }
       }
     }
