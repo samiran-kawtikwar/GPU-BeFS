@@ -8,11 +8,13 @@
 #include "heap/bheap.cuh"
 
 __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
+                                  node_info *node_space,
                                   uint memory_queue_len)
 {
   if (threadIdx.x == 0)
   {
     queue_enqueue(queue, tickets, head, tail, memory_queue_len, blockIdx.x);
+    node_space[blockIdx.x].id = blockIdx.x;
   }
 }
 

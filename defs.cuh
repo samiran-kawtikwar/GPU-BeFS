@@ -49,6 +49,7 @@ struct node_info
   int fixed_assignments[100]; // To be changed later using appropriate partitions
   float LB;
   uint level;
+  uint id; // For mapping with memory queue; DON'T UPDATE
   __host__ __device__ node_info() { std::fill(fixed_assignments, fixed_assignments + 100, -1); };
 };
 
@@ -74,7 +75,7 @@ struct queue_info
   node nodes[100];
   uint batch_size; // For batch push
   cuda::atomic<uint32_t, cuda::thread_scope_device> req_status;
-  uint id; // For mapping with queue DON'T UPDATE
+  uint id; // For mapping with request queue; DON'T UPDATE
 };
 
 struct work_info
