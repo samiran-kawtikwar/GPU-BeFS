@@ -23,7 +23,7 @@ __device__ void check_queue(queue_callee(queue, tickets, head, tail),
   if (threadIdx.x == 0)
   {
     bool full = queue_full(queue, tickets, head, tail, len);
-    printf("Queue full: %s\n", full ? "true" : "false");
+    DLog(info, "Queue full: %s\n", full ? "true" : "false");
   }
 }
 
@@ -33,7 +33,7 @@ __device__ void queue_length(queue_callee(queue, tickets, head, tail))
   if (threadIdx.x == 0)
   {
     uint size = *tail_queue - *head_queue;
-    printf("Queue size: %u\n", size);
+    DLog(info, "Queue size: %u\n", size);
   }
 }
 
@@ -73,7 +73,7 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
         uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
         if (size < n_tokens)
         {
-          printf("Memory queue empty, block %u ran out of space :(\n", blockIdx.x);
+          DLog(warn, "Memory queue empty, block %u ran out of space :(\n", blockIdx.x);
           heap_overflow.store(true, cuda::memory_order_release);
         }
       }
@@ -130,13 +130,13 @@ __global__ void memory_test(queue_callee(queue, tickets, head, tail),
                             uint *free_index)
 {
   if (threadIdx.x == 0)
-    printf("Block %u, starting get memory\n", blockIdx.x);
+    DLog(debug, "Block %u, starting get memory\n", blockIdx.x);
 
   get_memory(queue_caller(queue, tickets, head, tail), queue_size, n_tokens,
              &dequeued_idx[blockIdx.x * MAX_TOKENS]);
   __syncthreads();
   if (threadIdx.x == 0)
-    printf("Block %u, finished get memory\n", blockIdx.x);
+    DLog(debug, "Block %u, finished get memory\n", blockIdx.x);
 
   free_memory(queue_caller(queue, tickets, head, tail), queue_size, free_index[blockIdx.x]);
 }

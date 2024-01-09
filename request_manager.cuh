@@ -85,7 +85,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             {
               if (threadIdx.x == 0)
               {
-                printf("Holding pop request from block %u\n", dequeued_idx);
+                DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
                 invalid_count++;
                 // send the pop request back to the queue
@@ -113,13 +113,12 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
           if (task_type == POP)
             queue_space[dequeued_idx].nodes[0] = min;
           queue_space[dequeued_idx].req_status.store(int(false), cuda::memory_order_release);
-          // printf("Set %u occupied to false\n", dequeued_idx);
           atomicAdd(&(count), 1);
           if (count % 10000 == 0)
-            printf("\033[1;34mProcessed %u requests\033[0m\n", count);
+            DLog(debug, "Processed %u requests\n", count);
           invalid_count = 0;
 
-          // printf("Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
+          // DLog(debug, "Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
         }
         // __syncthreads();
         // if (size == 0)
@@ -205,7 +204,7 @@ __device__ void process_requests(uint INS_LEN,
             {
               if (threadIdx.x == 0)
               {
-                // printf("Holding pop request from block %u\n", dequeued_idx);
+                // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
                 invalid_count++;
                 // send the pop request back to the queue
@@ -218,7 +217,7 @@ __device__ void process_requests(uint INS_LEN,
             batch_push(heap, queue_space[blockIdx.x].nodes, queue_space[blockIdx.x].batch_size);
             break;
           default:
-            printf("Reached default\n");
+            DLog(error, "Reached default\n");
             break;
           }
         }
@@ -270,7 +269,7 @@ __device__ void generate_request_block(const d_instruction ins,
     if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
     {
       if (threadIdx.x == 0)
-        printf("Termination reached while waiting to send %s for block %u\n", getTextForEnum(ins.type), blockIdx.x);
+        DLog(debug, "Termination reached while waiting to send %s for block %u\n", getTextForEnum(ins.type), blockIdx.x);
       return;
     }
   } while (ns = my_sleep(ns));

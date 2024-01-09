@@ -109,13 +109,13 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         // if (threadIdx.x == 0 && pop_reset)
         // {
         //   pop_reset = false;
-        // printf("block %u is waiting for pop\n", blockIdx.x);
+        // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
         // }
         // __syncthreads();
         if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
         {
           if (threadIdx.x == 0)
-            printf("Termination reached while waiting for pop for block %u\n", blockIdx.x);
+            DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
           __syncthreads();
           return;
         }
@@ -188,7 +188,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
           __syncthreads();
           // push children to bheap
           // if (threadIdx.x == 0)
-          //   printf("Pushing for block %u with bound %f\n", blockIdx.x, a[0].key);
+          //   DLog(debug, "Pushing for block %u with bound %f\n", blockIdx.x, a[0].key);
           // __syncthreads();
           send_requests(BATCH_PUSH, psize - lvl, a,
                         queue_caller(request_queue, tickets, head, tail),
@@ -199,7 +199,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       {
         if (threadIdx.x == 0)
         {
-          printf("\033[1;31mOptimal solution reached with cost %f\033[0m\n", a[0].value->LB);
+          DLog(critical, "Optimal solution reached with cost %f\n", a[0].value->LB);
           opt_reached.store(true, cuda::memory_order_release);
         }
       }
@@ -216,7 +216,16 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   }
   __syncthreads();
   if (threadIdx.x == 0)
-    printf("Block %u is done\n", blockIdx.x);
+  {
+    if (blockIdx.x == 3)
+    {
+      DLog(critical, "Block %u is done\n", blockIdx.x);
+    }
+    else
+    {
+      DLog(debug, "Block %u is done\n", blockIdx.x);
+    }
+  }
 }
 
 __global__ void dummy_vector_add(const cost_type *a, uint N2)
