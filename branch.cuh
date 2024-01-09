@@ -77,6 +77,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   {
     uint ns = 8;
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
+    __shared__ uint popped_index;
     while (!opt_reached.load(cuda::memory_order_relaxed) &&
            !heap_overflow.load(cuda::memory_order_relaxed))
     {
@@ -127,6 +128,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       {
         a[0] = queue_space[blockIdx.x].nodes[0];
         a[0].value->LB = 0;
+        popped_index = a[0].value->id;
       }
       __syncthreads();
       uint lvl = a[0].value->level;
@@ -205,8 +207,12 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       }
       // else
       // {
-      //   printf("Node with key %f is pruned\n", a[0].value->LB);
+      //   DLog(debug, "Node with key %f is pruned\n", a[0].value->LB);
       // }
+      // free the popped node from node space
+      __syncthreads();
+      free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
+                  popped_index);
     }
   }
   else

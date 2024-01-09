@@ -16,6 +16,15 @@
 #include "LAP/lap_kernels.cuh"
 #include "branch.cuh"
 
+__global__ void get_exit_code(bool *optimal, bool *heap_full)
+{
+  if (blockIdx.x == 0 && threadIdx.x == 0)
+  {
+    optimal[0] = opt_reached.load(cuda::memory_order_relaxed);
+    heap_full[0] = heap_overflow.load(cuda::memory_order_relaxed);
+  }
+}
+
 int main(int argc, char **argv)
 {
   Log(info, "Starting program");
@@ -98,7 +107,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * sizeof(node_info)));
   CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * sizeof(node_info)));
 
-  uint *d_address_space;
+  uint *d_address_space; // To store dequeued addresses
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, max_workers * max_node_length * sizeof(uint)));
   CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, max_workers * max_node_length * sizeof(uint)));
 
@@ -106,8 +115,9 @@ int main(int argc, char **argv)
   queue_declare(memory_queue, tickets, head, tail);
   queue_init(memory_queue, tickets, head, tail, memory_queue_len, dev_);
 
-  // Populate memory queue
-  execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
+  // Populate memory queue and node_space IDs
+  execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true,
+             queue_caller(memory_queue, tickets, head, tail), d_node_space,
              memory_queue_len);
   execKernel(check_queue_global, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail),
              memory_queue_len);
@@ -142,6 +152,15 @@ int main(int argc, char **argv)
              UB);
 
   printf("\n");
+
+  // Get exit code
+  bool *optimal, *heap_full;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&optimal, sizeof(bool)));
+  CUDA_RUNTIME(cudaMallocManaged((void **)&heap_full, sizeof(bool)));
+  optimal[0] = false;
+  heap_full[0] = false;
+  execKernel(get_exit_code, 1, 1, dev_, false, optimal, heap_full);
+  Log(critical, "Optimal: %s, Heap full: %s", optimal[0] ? "true" : "false", heap_full[0] ? "true" : "false");
   d_bheap.print_size();
   /*
   // execKernel(free_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
@@ -163,5 +182,12 @@ int main(int argc, char **argv)
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
 
-  return 0;
+  if (optimal[0])
+  {
+    return 0;
+  }
+  else
+  {
+    return 1;
+  }
 }
