@@ -4,6 +4,17 @@
 #include <string>
 #define __DEBUG__
 
+namespace logger
+{
+  __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
+  {
+    __nanosleep(ns);
+    if (ns < (1 << 20))
+      ns <<= 1;
+    return ns;
+  }
+}
+
 const char newline[] = "\n";
 const char comma[] = ", ";
 const char colon[] = ": ";
@@ -76,6 +87,7 @@ __device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... a
 {
 
   bool print = true;
+  static int logging_flag = int(false);
 #ifndef __DEBUG__
   if (l == debug)
   {
@@ -85,31 +97,26 @@ __device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... a
 
   if (print)
   {
-    // Line Color Set
-    switch (l)
+    uint ns = 8;
+    do
     {
-    case critical:
-      printf("\033[1;31m"); // Set the text to the color red.
-      break;
-    case warn:
-      printf("\033[1;33m"); // Set the text to the color brown.
-      break;
-    case error:
-      printf("\033[1;31m"); // Set the text to the color red.
-      break;
-    case info:
-      printf("\033[1;32m"); // Set the text to the color green.
-      break;
-    case debug:
-      printf("\033[1;34m"); // Set the text to the color blue.
-      break;
-    default:
-      printf("\033[0m"); // Resets the text to default color.
-      break;
-    }
+      if (atomicCAS(&logging_flag, int(false), int(true)) == int(false))
+      {
 
-    printf(f, args...);
-    printf("\033[0m");
+        // Line Color Set
+        const char *prefix = (l == debug)                    ? "\033[1;34m" // blue
+                             : (l == info)                   ? "\033[1;32m" // green
+                             : (l == warn)                   ? "\033[1;33m" // brown
+                             : (l == error || l == critical) ? "\033[1;31m" // red
+                                                             : "\033[0m";   // default
+
+        printf(prefix);
+        printf(f, args...);
+        printf("\033[0m");
+        atomicCAS(&logging_flag, int(true), int(false));
+        break;
+      }
+    } while (ns = logger::my_sleep(ns));
   }
 }
 
