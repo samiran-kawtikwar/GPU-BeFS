@@ -114,7 +114,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             queue_space[dequeued_idx].nodes[0] = min;
           queue_space[dequeued_idx].req_status.store(int(false), cuda::memory_order_release);
           atomicAdd(&(count), 1);
-          if (count % 10000 == 0)
+          if (count % 100000 == 0)
             DLog(debug, "Processed %u requests\n", count);
           invalid_count = 0;
 

@@ -70,7 +70,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                                const cost_type *original_cost, uint max_node_length,
                                queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
-                               const cost_type UB)
+                               const cost_type UB,
+                               bnb_stats *stats)
 {
 
   if (blockIdx.x > 0)
@@ -142,6 +143,10 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
       if (a[0].value->LB < UB)
       {
+        if (threadIdx.x == 0)
+        {
+          atomicAdd(&stats->nodes_explored, 1);
+        }
         // branch on popped node and copy bounds
         get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, psize - lvl,
                    my_addresses);
@@ -197,7 +202,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                         request_queue_size, queue_space);
         }
       }
-      else if (a[0].value->LB == UB)
+      else if (lvl == psize && a[0].value->LB == UB)
       {
         if (threadIdx.x == 0)
         {
@@ -205,10 +210,14 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
           opt_reached.store(true, cuda::memory_order_release);
         }
       }
-      // else
-      // {
-      //   DLog(debug, "Node with key %f is pruned\n", a[0].value->LB);
-      // }
+      else
+      {
+        // DLog(debug, "Node with key %f is pruned\n", a[0].value->LB);
+        if (threadIdx.x == 0)
+        {
+          atomicAdd(&stats->nodes_pruned, 1);
+        }
+      }
       // free the popped node from node space
       __syncthreads();
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,

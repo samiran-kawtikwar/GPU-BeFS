@@ -2,7 +2,7 @@
 #include "queue/queue.cuh"
 
 #define __DEBUG__
-#define MAX_HEAP_SIZE 1000000
+// #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_DATA 0xffffffff
 #define eps 1e-6
@@ -82,4 +82,10 @@ struct work_info
 {
   uint batch_size;
   node nodes[100];
+};
+
+struct bnb_stats
+{
+  uint nodes_explored;
+  uint nodes_pruned;
 };

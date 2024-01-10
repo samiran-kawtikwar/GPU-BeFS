@@ -12,7 +12,7 @@ class BHEAP
 {
 public:
   NODE *d_heap;
-  size_t *d_size;
+  size_t *d_size, *d_max_size, *d_size_limit;
   void print()
   {
     size_t *h_size = (size_t *)malloc(sizeof(size_t));
@@ -34,7 +34,7 @@ public:
     NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
     CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
 
-    printf("heap size: %lu\n", h_size[0]);
+    Log(info, "heap size at termination: %lu\n", h_size[0]);
   }
 };
 
@@ -84,7 +84,7 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
   {
     NODE *heap = bheap.d_heap;
     size_t size = bheap.d_size[0];
-    if (size >= MAX_HEAP_SIZE)
+    if (size >= bheap.d_size_limit[0])
     {
       printf("heap overflow!!\n");
       return;
@@ -100,6 +100,7 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
       i = (i - 1) / 2;
     }
     bheap.d_size[0]++;
+    bheap.d_max_size[0] = max(bheap.d_max_size[0], bheap.d_size[0]);
     // printf("pushed: %f: heap size: %lu\n", new_node.key, bheap.d_size[0]);
   }
   return;
