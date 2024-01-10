@@ -63,17 +63,15 @@ int main(int argc, char **argv)
   Log(info, "LAP solved succesfully, objective %u\n", (uint)UB);
   lap->print_solution();
   delete lap;
-  Log(debug, "solving LAP with branching");
+  Log(debug, "Solving LAP with Branching");
 
-  // Create BHEAP on device
-  BHEAP<node> d_bheap;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_heap, MAX_HEAP_SIZE * sizeof(node)));
-  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_size, sizeof(size_t)));
-  CUDA_RUNTIME(cudaMemset((void *)d_bheap.d_size, 0, sizeof(size_t)));
+  size_t free, total;
+  CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
+  Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
 
   // Create space for queue
-  size_t queue_size = 100; // To be changed later -- equals grid dimension of request manager
-  size_t num_nodes = 100;  // To be changed later -- equals maximum multiplication factor
+  size_t queue_size = psize + 1; // To be changed later -- equals grid dimension of request manager
+  // size_t num_nodes = psize;      // To be changed later -- equals maximum multiplication factor
   queue_info *d_queue_space, *h_queue_space;
   CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, queue_size * sizeof(queue_info)));
   h_queue_space = (queue_info *)malloc(queue_size * sizeof(queue_info));
@@ -101,16 +99,44 @@ int main(int argc, char **argv)
 
   // Create space for node_info and addresses
   size_t max_node_length = min(MAX_TOKENS, psize); // To be changed later -- equals problem size
-  uint memory_queue_len = MAX_HEAP_SIZE;
-  uint max_workers = queue_size;
+  uint max_workers = psize + 1;
   node_info *d_node_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * sizeof(node_info)));
-  CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * sizeof(node_info)));
 
   uint *d_address_space; // To store dequeued addresses
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, max_workers * max_node_length * sizeof(uint)));
   CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, max_workers * max_node_length * sizeof(uint)));
 
+  // uint memory_queue_len = MAX_HEAP_SIZE;
+  // Get memory queue length based on available memory
+  // size_t free, total;
+  CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
+  Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
+  size_t memory_queue_len = (free * 0.95) / (sizeof(node_info) + sizeof(node)); // Keeping 5% headroom
+  Log(info, "Memory queue length: %lu", memory_queue_len);
+
+  CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * sizeof(node_info)));
+  CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * sizeof(node_info)));
+
+  CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
+  Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
+  // Create BHEAP on device
+  BHEAP<node> d_bheap;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_heap, memory_queue_len * sizeof(node)));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_size, sizeof(size_t)));
+  CUDA_RUNTIME(cudaMemset((void *)d_bheap.d_size, 0, sizeof(size_t)));
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_bheap.d_max_size, sizeof(size_t)));
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_bheap.d_size_limit, sizeof(size_t)));
+  d_bheap.d_size_limit[0] = memory_queue_len;
+  d_bheap.d_max_size[0] = 0;
+
+  // Create bnb-stats object on device
+  bnb_stats *stats;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&stats, sizeof(bnb_stats)));
+  stats->nodes_explored = 1; // for root node
+  stats->nodes_pruned = 0;
+
+  CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
+  Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
   // Create MPMC queue for handling memory requests
   queue_declare(memory_queue, tickets, head, tail);
   queue_init(memory_queue, tickets, head, tail, memory_queue_len, dev_);
@@ -149,7 +175,7 @@ int main(int argc, char **argv)
              d_costs, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,
-             UB);
+             UB, stats);
 
   printf("\n");
 
@@ -162,6 +188,9 @@ int main(int argc, char **argv)
   execKernel(get_exit_code, 1, 1, dev_, false, optimal, heap_full);
   Log(critical, "Optimal: %s, Heap full: %s", optimal[0] ? "true" : "false", heap_full[0] ? "true" : "false");
   d_bheap.print_size();
+  Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
+
+  Log(info, "Nodes Explored: %u, Pruned: %u", stats->nodes_explored, stats->nodes_pruned);
   /*
   // execKernel(free_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
   //            memory_queue_len, d_address_space);
@@ -177,8 +206,13 @@ int main(int argc, char **argv)
   // Free device memory
   CUDA_RUNTIME(cudaFree(d_bheap.d_heap));
   CUDA_RUNTIME(cudaFree(d_bheap.d_size));
+  CUDA_RUNTIME(cudaFree(d_bheap.d_max_size));
+  CUDA_RUNTIME(cudaFree(d_bheap.d_size_limit));
   CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
+  CUDA_RUNTIME(cudaFree(d_address_space));
+  CUDA_RUNTIME(cudaFree(stats));
+
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
 
