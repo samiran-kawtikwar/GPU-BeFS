@@ -119,14 +119,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
   // Create BHEAP on device
-  BHEAP<node> d_bheap;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_heap, memory_queue_len * sizeof(node)));
-  CUDA_RUNTIME(cudaMalloc((void **)&d_bheap.d_size, sizeof(size_t)));
-  CUDA_RUNTIME(cudaMemset((void *)d_bheap.d_size, 0, sizeof(size_t)));
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_bheap.d_max_size, sizeof(size_t)));
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_bheap.d_size_limit, sizeof(size_t)));
-  d_bheap.d_size_limit[0] = memory_queue_len;
-  d_bheap.d_max_size[0] = 0;
+  BHEAP<node> d_bheap = BHEAP<node>(memory_queue_len, dev_);
 
   // Create bnb-stats object on device
   bnb_stats *stats;
@@ -178,10 +171,7 @@ int main(int argc, char **argv)
   Log(info, "Nodes Explored: %u, Pruned: %u", stats->nodes_explored, stats->nodes_pruned);
 
   // Free device memory
-  CUDA_RUNTIME(cudaFree(d_bheap.d_heap));
-  CUDA_RUNTIME(cudaFree(d_bheap.d_size));
-  CUDA_RUNTIME(cudaFree(d_bheap.d_max_size));
-  CUDA_RUNTIME(cudaFree(d_bheap.d_size_limit));
+  d_bheap.free_memory();
   CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
   CUDA_RUNTIME(cudaFree(d_address_space));

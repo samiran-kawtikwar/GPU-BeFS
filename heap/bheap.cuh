@@ -13,6 +13,30 @@ class BHEAP
 public:
   NODE *d_heap;
   size_t *d_size, *d_max_size, *d_size_limit;
+  // Constructors
+  __host__ BHEAP(size_t size_limit, int device_id = 0)
+  {
+    CUDA_RUNTIME(cudaSetDevice(device_id));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_heap, sizeof(NODE) * size_limit));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_size, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_max_size, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_size_limit, sizeof(size_t)));
+
+    CUDA_RUNTIME(cudaMemset(d_size, 0, sizeof(size_t)));
+    d_max_size[0] = 0;
+    d_size_limit[0] = size_limit;
+  }
+  __device__ BHEAP();
+
+  // Destructors
+  __host__ void free_memory()
+  {
+    CUDA_RUNTIME(cudaFree(d_heap));
+    CUDA_RUNTIME(cudaFree(d_size));
+    CUDA_RUNTIME(cudaFree(d_max_size));
+    CUDA_RUNTIME(cudaFree(d_size_limit));
+  }
+
   void print()
   {
     size_t *h_size = (size_t *)malloc(sizeof(size_t));
