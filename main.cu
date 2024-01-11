@@ -16,13 +16,12 @@
 #include "LAP/lap_kernels.cuh"
 #include "branch.cuh"
 
-__global__ void get_exit_code(bool *optimal, bool *heap_full)
+__global__ void get_exit_code(ExitCode *ec)
 {
-  if (blockIdx.x == 0 && threadIdx.x == 0)
-  {
-    optimal[0] = opt_reached.load(cuda::memory_order_relaxed);
-    heap_full[0] = heap_overflow.load(cuda::memory_order_relaxed);
-  }
+
+  ec[0] = opt_reached.load(cuda::memory_order_consume)     ? ExitCode::OPTIMAL
+          : heap_overflow.load(cuda::memory_order_consume) ? ExitCode::HEAP_FULL
+                                                           : ExitCode::UNKNOWN_ERROR;
 }
 
 int main(int argc, char **argv)
@@ -157,18 +156,6 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              UB);
 
-  // print d_address_space directly from unified memory
-  for (size_t i = 0; i < 2; i++)
-  {
-    printf("Worker %d: \n", i);
-    for (size_t j = 0; j < max_node_length; j++)
-    {
-      printf("%u, ", d_address_space[i * max_node_length + j]);
-    }
-    printf("\n\n");
-  }
-  d_bheap.print();
-
   execKernel(branch_n_bound, psize + 1, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              psize, d_address_space, d_node_space,
@@ -180,28 +167,15 @@ int main(int argc, char **argv)
   printf("\n");
 
   // Get exit code
-  bool *optimal, *heap_full;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&optimal, sizeof(bool)));
-  CUDA_RUNTIME(cudaMallocManaged((void **)&heap_full, sizeof(bool)));
-  optimal[0] = false;
-  heap_full[0] = false;
-  execKernel(get_exit_code, 1, 1, dev_, false, optimal, heap_full);
-  Log(critical, "Optimal: %s, Heap full: %s", optimal[0] ? "true" : "false", heap_full[0] ? "true" : "false");
+  ExitCode exit_code, *d_exit_code;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));
+  execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
+  CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
+  CUDA_RUNTIME(cudaFree(d_exit_code));
+
   d_bheap.print_size();
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
-
   Log(info, "Nodes Explored: %u, Pruned: %u", stats->nodes_explored, stats->nodes_pruned);
-  /*
-  // execKernel(free_memory_global, max_workers, 32, dev_, true, queue_caller(memory_queue, tickets, head, tail),
-  //            memory_queue_len, d_address_space);
-  // execKernel(get_queue_length_global, 1, 1, dev_, true, queue_caller(memory_queue, tickets, head, tail));
-
-  ins_len = ilist.tasks.size();
-
-  execKernel((request_manager<node>), max_workers + 1, 32, dev_, true,
-             d_ilist, ins_len, queue_caller(request_queue, tickets, head, tail), request_state,
-             queue_size, d_bheap, d_queue_space);
-  */
 
   // Free device memory
   CUDA_RUNTIME(cudaFree(d_bheap.d_heap));
@@ -211,17 +185,12 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
   CUDA_RUNTIME(cudaFree(d_address_space));
+  CUDA_RUNTIME(cudaFree(d_work_space));
   CUDA_RUNTIME(cudaFree(stats));
+  CUDA_RUNTIME(cudaFree(d_costs));
 
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
 
-  if (optimal[0])
-  {
-    return 0;
-  }
-  else
-  {
-    return 1;
-  }
+  return int(exit_code);
 }

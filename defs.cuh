@@ -20,7 +20,16 @@ enum TaskType
   TOP
 };
 
-__forceinline__ __device__ const char *getTextForEnum(int enumVal)
+enum ExitCode
+{
+  OPTIMAL = 0,
+  HEAP_FULL,
+  INFEASIBLE,
+  UNKNOWN_ERROR
+};
+
+__forceinline__ __device__ const char *
+getTextForEnum(int enumVal)
 {
   return (const char *[]){
       "PUSH",
