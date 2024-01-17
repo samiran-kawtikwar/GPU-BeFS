@@ -63,6 +63,7 @@ int main(int argc, char **argv)
   lap->print_solution();
   delete lap;
   Log(debug, "Solving LAP with Branching");
+  Timer t = Timer();
 
   size_t free, total;
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
@@ -169,6 +170,7 @@ int main(int argc, char **argv)
   d_bheap.print_size();
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
   Log(info, "Nodes Explored: %u, Pruned: %u", stats->nodes_explored, stats->nodes_pruned);
+  Log(info, "Total time taken: %f sec", t.elapsed());
 
   // Free device memory
   d_bheap.free_memory();
