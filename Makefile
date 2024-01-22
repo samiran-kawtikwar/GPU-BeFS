@@ -1,72 +1,19 @@
 NVCC ?= nvcc
-TARGET_EXEC ?= a.out
+GCC ?= g++
 
-# EXEDIR=../test_execs
-BUILD_DIR ?=./build
-OBJ_DIR ?=$(BUILD_DIR)/o
-EXE_DIR ?= $(BUILD_DIR)/exe
-
-SRC_DIRS ?= $(shell find . -type d -not -path "./scratch*" -not -path "./.git*" -not -path "./build*")
-
-SRCS := $(shell find $(SRC_DIRS) -maxdepth 1 -name *.cpp -or -name *.c -or -name *.s -or -name *.cu)
-OBJS := $(SRCS:%=$(BUILD_DIR)/obj/%.o)
-EXES := $(SRCS:%=$(BUILD_DIR)/exe/%.exe)
-DEBUG_OBJS := $(SRCS:%=$(BUILD_DIR)/debug_objs/%.o)
-DEBUG_EXES := $(SRCS:%=$(BUILD_DIR)/debug_exes/%.exe)
-DEPS := $(OBJS:.o=.d)
 ARCH := $(shell ~/get_SM.sh)
+BUILD_DIR ?=./build
 
+all: $(BUILD_DIR)/obj/main.o $(BUILD_DIR)/obj/gurobi_solver.o
+	$(NVCC) -o $(BUILD_DIR)/main.exe $(BUILD_DIR)/obj/gurobi_solver.o $(BUILD_DIR)/obj/main.o -L${GUROBI_HOME}/lib -lgurobi_c++ -lgurobi110 -lcuda -lgomp -O3 -I${GUROBI_HOME}/include -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
 
-INCL_DIRS := #./include $(FREESTAND_DIR)/include 
-INC_FLAGS := $(addprefix -I,$(INCL_DIRS))
+$(BUILD_DIR)/obj/main.o: main.cu
+	mkdir -p $(BUILD_DIR)/obj/
+	$(NVCC) -c main.cu -o $(BUILD_DIR)/obj/main.o -L${GUROBI_HOME}/lib -lgomp -O3 -I${GUROBI_HOME}/include -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
 
-LDFLAGS := -lcuda -lgomp
-CPPFLAGS ?= $(INC_FLAGS) -std=c++11 -O3
-CUDAFLAGS ?= $(INC_FLAGS) -g -Xcompiler -fopenmp -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
-						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
-CUDADEBUGFLAGS ?= $(INC_FLAGS) -g -G -Xcompiler -fopenmp -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) 
-						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
-						
-NVCCOPTIONS ?=
-
-all: objs release_exes
-dbg: debug_objs debug_exes
-
-objs: $(OBJS)
-debug_objs: $(DEBUG_OBJS)
-
-release_exes: $(EXES)
-debug_exes: $(DEBUG_EXES)
-
-#Assemblies
-
-$(BUILD_DIR)/exe/%.exe: $(BUILD_DIR)/obj/%.o
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $< -o $@ $(LDFLAGS)
-
-$(BUILD_DIR)/debug_exes/%.exe: $(BUILD_DIR)/debug_objs/%.o
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $< -o $@ $(LDFLAGS)
-
-
-# cuda source
-
-$(OBJS): $(SRCS)
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $(CUDAFLAGS) -c $< -o $@
-
-#cuda debug source
-
-$(BUILD_DIR)/debug_objs/%.cu.o: %.cu
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $(CUDADEBUGFLAGS) -c $< -o $@
-
-.PHONY: clean
-
+$(BUILD_DIR)/obj/gurobi_solver.o: RCAP/gurobi_solver.cpp
+	$(NVCC) -c RCAP/gurobi_solver.cpp -o $(BUILD_DIR)/obj/gurobi_solver.o -L${GUROBI_HOME}/lib -lgurobi_c++ -lgurobi110 -O3 -I${GUROBI_HOME}/include
 clean:
 	$(RM) -r $(BUILD_DIR)
 	@echo SM_VALUE IS $(ARCH)
 -include $(DEPS)
-
-
-MKDIR_P ?= mkdir -p

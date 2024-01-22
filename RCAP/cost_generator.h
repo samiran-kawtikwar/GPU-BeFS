@@ -92,3 +92,80 @@ T *generate_cost(Config config, const int seed = 45345)
   // delete[] freq;
   return cost;
 }
+
+template <typename T>
+T *generate_weights(Config config, int seed = 45345)
+{
+  seed += config.user_n;
+  size_t N = config.user_n;
+  size_t K = config.user_ncommodities;
+  double frac = config.frac;
+  double range = frac * N / 10;
+
+  T *weights = new T[N * N * K];
+  memset(weights, 0, N * N * K * sizeof(T));
+
+  // use all available CPU threads for generating cost
+  uint nthreads = min(K, (size_t)thread::hardware_concurrency() - 3); // remove 3 threads for OS and other tasks
+  uint commodities_per_thread = ceil((K * 1.0) / nthreads);
+#pragma omp parallel for num_threads(nthreads)
+  for (uint tid = 0; tid < nthreads; tid++)
+  {
+    uint first_commodity = tid * commodities_per_thread;
+    uint last_commodity = min(first_commodity + commodities_per_thread, (uint)K);
+    for (size_t k = first_commodity; k < last_commodity; k++)
+    {
+      default_random_engine generator(seed + k);
+      generator.discard(1);
+      uniform_int_distribution<T> distribution(0, range - 1);
+      for (size_t r = 0; r < N; r++)
+      {
+        for (size_t c = 0; c < N; c++)
+        {
+          double gen = distribution(generator);
+          weights[N * N * k + N * r + c] = (T)gen;
+        }
+      }
+    }
+  }
+  return weights;
+}
+
+template <typename T>
+T *get_budgets(T *weights, Config config)
+{
+  size_t N = config.user_n;
+  size_t K = config.user_ncommodities;
+  T *budgets = new T[K];
+  memset(budgets, 0, K * sizeof(T));
+  uint nthreads = min(K, (size_t)thread::hardware_concurrency() - 3); // remove 3 threads for OS and other tasks
+  uint commodities_per_thread = ceil((K * 1.0) / nthreads);
+#pragma omp parallel for num_threads(nthreads)
+  for (uint tid = 0; tid < nthreads; tid++)
+  {
+    uint first_commodity = tid * commodities_per_thread;
+    uint last_commodity = min(first_commodity + commodities_per_thread, (uint)K);
+    for (size_t k = first_commodity; k < last_commodity; k++)
+    {
+      for (size_t r = 0; r < N; r++)
+      {
+        for (size_t c = 0; c < N; c++)
+        {
+          budgets[k] += weights[N * N * k + N * r + c];
+        }
+      }
+      budgets[k] /= N;
+    }
+  }
+  return budgets;
+}
+
+template <typename T>
+problem_info *generate_problem(Config config, int seed = 45345)
+{
+  problem_info *info = new problem_info();
+  info->costs = generate_cost<T>(config, seed);
+  info->weights = generate_weights<T>(config, seed);
+  info->budgets = get_budgets<T>(info->weights, config);
+  return info;
+}

@@ -11,6 +11,7 @@ const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned long long int uint64;
 typedef unsigned int uint;
 typedef uint cost_type;
+typedef uint weight_type;
 
 enum TaskType
 {
@@ -51,6 +52,13 @@ const char *enum_to_str(TaskType type)
     return "top";
   else
     return "unknown";
+};
+
+struct problem_info
+{
+  cost_type *costs;     // cost of assigning
+  weight_type *weights; // weight of each commodity
+  weight_type *budgets; // capacity of each commodity
 };
 
 struct node_info
