@@ -90,7 +90,7 @@ int main(int argc, char **argv)
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
 
-  Log(info, "LAP solved succesfully, objective %u\n", (uint)UB);
+  Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
   printf("Exiting...\n");
   exit(0);
   // lap->print_solution();

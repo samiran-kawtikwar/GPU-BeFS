@@ -1,3 +1,8 @@
+// Solve RCAP with Gurobi
+
+#include <gurobi_c++.h>
+#include "host_logger.h"
+#include "stdio.h"
 #include "gurobi_solver.h"
 #include <sstream>
 
