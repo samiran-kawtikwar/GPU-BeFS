@@ -16,13 +16,7 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
     GRBEnv env = GRBEnv();
     env.set(GRB_IntParam_OutputFlag, 1);
     GRBModel model = GRBModel(env);
-    double *lb = new double[N];
-    double *ub = new double[N];
-    for (uint i = 0; i < N; i++)
-    {
-      lb[i] = 0;
-      ub[i] = 1;
-    }
+
     // Create variables
     GRBVar *x = new GRBVar[N * N];
     for (uint i = 0; i < N; i++)
@@ -63,6 +57,7 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
     model.write("scratch/model.lp");
     model.optimize();
     cost_type UB = (cost_type)model.getObjective().getValue();
+    delete[] x;
     return UB;
   }
   catch (GRBException e)
