@@ -14,7 +14,7 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
   try
   {
     GRBEnv env = GRBEnv();
-    env.set(GRB_IntParam_OutputFlag, 1);
+    env.set(GRB_IntParam_OutputFlag, 0);
     GRBModel model = GRBModel(env);
 
     // Create variables
@@ -43,20 +43,40 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
       model.addConstr(expr2 == 1);
     }
     model.update();
-
-    for (uint k = 0; k < K; k++)
-    {
-      GRBLinExpr expr = 0;
-      for (uint i = 0; i < N; i++)
-      {
-        expr += weights[i] * x[i * N + k];
-      }
-      model.addConstr(expr <= budgets[k]);
-    }
-    model.update();
-    model.write("scratch/model.lp");
     model.optimize();
-    cost_type UB = (cost_type)model.getObjective().getValue();
+    cost_type LAP_obj = (cost_type)model.getObjective().getValue();
+    cost_type UB = LAP_obj;
+    Log(info, "LAP solved with objective: %u", LAP_obj);
+
+    // Make sure budget constraints are active
+    do
+    {
+      Log(debug, "Trying");
+      model.reset();
+      // Add budget constraints
+      for (uint k = 0; k < K; k++)
+      {
+        GRBLinExpr expr = 0;
+        for (uint i = 0; i < N * N; i++)
+        {
+          expr += weights[k * N * N + i] * x[i];
+        }
+        model.addConstr(expr <= budgets[k]);
+      }
+      model.update();
+      model.optimize();
+      UB = (cost_type)model.getObjective().getValue();
+      if (UB <= LAP_obj)
+      {
+        // Reduce the budgets
+        Log(debug, "Reducing budgets");
+        for (uint k = 0; k < K; k++)
+          budgets[k] = std::max((weight_type)1, budgets[k] - 1);
+      }
+    } while (UB <= LAP_obj);
+    model.write("scratch/model.lp");
+    Log(info, "RCAP solved with objective: %u", UB);
+
     delete[] x;
     return UB;
   }
@@ -65,7 +85,7 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
     Log(error, "Error code = %d", e.getErrorCode());
     std::cout << e.getErrorCode() << "\n\n"
               << e.getMessage() << std::endl;
-    // std::cout << e.getErrorCode() << std::endl;
+    exit(-1);
   }
   catch (...)
   {
