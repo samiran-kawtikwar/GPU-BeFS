@@ -7,8 +7,8 @@
 #include "utils/logger.cuh"
 #include "heap/bheap.cuh"
 
-__device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached = false;
-__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow = false;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;
 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),

@@ -94,6 +94,8 @@ int main(int argc, char **argv)
   // Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
   // printf("Exiting...\n");
   // exit(0);
+  opt_reached.store(false, cuda::memory_order_release);
+  heap_overflow.store(false, cuda::memory_order_release);
 
   Log(debug, "Solving RCAP with Branching");
   Timer t = Timer();
