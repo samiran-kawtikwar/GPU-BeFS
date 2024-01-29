@@ -43,38 +43,39 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaSetDevice(dev_));
   problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
 
-  Log(info, "Costs: ");
-  for (size_t i = 0; i < psize; i++)
-  {
-    for (size_t j = 0; j < psize; j++)
-    {
-      printf("%u, ", h_problem_info->costs[i * psize + j]);
-    }
-    printf("\n");
-  }
-
-  Log(info, "Weights: ");
-  for (size_t k = 0; k < ncommodities; k++)
-  {
-    printf("Commodity: %lu\n", k);
+  /*
+    Log(info, "Costs: ");
     for (size_t i = 0; i < psize; i++)
     {
       for (size_t j = 0; j < psize; j++)
       {
-        printf("%u, ", h_problem_info->weights[k * psize * psize + i * psize + j]);
+        printf("%u, ", h_problem_info->costs[i * psize + j]);
       }
       printf("\n");
     }
+
+    Log(info, "Weights: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("Commodity: %lu\n", k);
+      for (size_t i = 0; i < psize; i++)
+      {
+        for (size_t j = 0; j < psize; j++)
+        {
+          printf("%u, ", h_problem_info->weights[k * psize * psize + i * psize + j]);
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+
+    Log(info, "Budgets: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("%u, ", h_problem_info->budgets[k]);
+    }
     printf("\n");
-  }
-
-  Log(info, "Budgets: ");
-  for (size_t k = 0; k < ncommodities; k++)
-  {
-    printf("%u, ", h_problem_info->budgets[k]);
-  }
-  printf("\n");
-
+  */
   // Copy problem info to device
   problem_info *d_problem_info;
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_problem_info, sizeof(problem_info)));
@@ -85,16 +86,14 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->budgets, ncommodities * sizeof(weight_type)));
   CUDA_RUNTIME(cudaMemcpy(d_problem_info->budgets, h_problem_info->budgets, ncommodities * sizeof(weight_type), cudaMemcpyHostToDevice));
 
-  cost_type *d_costs = d_problem_info->costs;
-
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
 
-  Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
-  printf("Exiting...\n");
-  exit(0);
-  // lap->print_solution();
-  Log(debug, "Solving LAP with Branching");
+  // Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
+  // printf("Exiting...\n");
+  // exit(0);
+
+  Log(debug, "Solving RCAP with Branching");
   Timer t = Timer();
 
   size_t free, total;
@@ -158,7 +157,8 @@ int main(int argc, char **argv)
   bnb_stats *stats;
   CUDA_RUNTIME(cudaMallocManaged((void **)&stats, sizeof(bnb_stats)));
   stats->nodes_explored = 1; // for root node
-  stats->nodes_pruned = 0;
+  stats->nodes_pruned_incumbent = 0;
+  stats->nodes_pruned_infeasible = 0;
 
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %f %", ((total - free) * 1.0) / total * 100);
@@ -173,19 +173,21 @@ int main(int argc, char **argv)
   execKernel(check_queue_global, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail),
              memory_queue_len);
 
+  // execKernel(sanity_prints, 1, 1, dev_, false, d_problem_info);
+
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              psize, d_address_space, d_node_space,
-             d_costs, max_node_length,
+             d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,
              UB);
 
   execKernel(branch_n_bound, psize + 1, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             psize, d_address_space, d_node_space,
-             d_costs, max_node_length,
+             psize, ncommodities, d_address_space, d_node_space,
+             d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,
              UB, stats);
@@ -201,7 +203,7 @@ int main(int argc, char **argv)
 
   d_bheap.print_size();
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
-  Log(info, "Nodes Explored: %u, Pruned: %u", stats->nodes_explored, stats->nodes_pruned);
+  Log(info, "Nodes Explored: %u, Incumbant: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
   Log(info, "Total time taken: %f sec", t.elapsed());
 
   // Free device memory
@@ -215,6 +217,11 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_problem_info->weights));
   CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
   CUDA_RUNTIME(cudaFree(d_problem_info));
+
+  delete[] h_problem_info->costs;
+  delete[] h_problem_info->weights;
+  delete[] h_problem_info->budgets;
+  delete[] h_problem_info;
 
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);

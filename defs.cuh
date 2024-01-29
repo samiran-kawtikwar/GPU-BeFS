@@ -104,5 +104,6 @@ struct work_info
 struct bnb_stats
 {
   uint nodes_explored;
-  uint nodes_pruned;
+  uint nodes_pruned_incumbent;
+  uint nodes_pruned_infeasible;
 };

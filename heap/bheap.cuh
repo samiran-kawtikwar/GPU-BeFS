@@ -58,7 +58,7 @@ public:
     NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
     CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
 
-    Log(info, "heap size at termination: %lu\n", h_size[0]);
+    Log(info, "Heap size at termination: %lu", h_size[0]);
   }
 };
 
