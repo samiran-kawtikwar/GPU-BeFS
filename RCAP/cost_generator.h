@@ -167,5 +167,7 @@ problem_info *generate_problem(Config config, int seed = 45345)
   info->costs = generate_cost<T>(config, seed);
   info->weights = generate_weights<T>(config, seed);
   info->budgets = get_budgets<T>(info->weights, config);
+  info->psize = config.user_n;
+  info->ncommodities = config.user_ncommodities;
   return info;
 }

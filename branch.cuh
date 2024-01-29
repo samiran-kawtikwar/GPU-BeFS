@@ -5,30 +5,16 @@
 #include "request_manager.cuh"
 #include "queue/queue.cuh"
 #include "defs.cuh"
-
-// __global__ void sanity_prints(const problem_info *pinfo)
-// {
-//   if (threadIdx.x == 0 && blockIdx.x == 0)
-//   {
-//     DLog(debug, "ncommodities: %u\n", pinfo->ncommodities);
-//     DLog(debug, "psize: %u\n", pinfo->psize);
-//     DLog(debug, "budgets: ");
-//     for (uint i = 0; i < pinfo->ncommodities; i++)
-//     {
-//       DLog(debug, "%u ", pinfo->budgets[i]);
-//     }
-//     DLog(debug, "\n");
-//   }
-// }
+#include "RCAP/rcap_kernels.cuh"
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                  uint psize, uint *addresses_space, node_info *node_space,
+                                  uint *addresses_space, node_info *node_space,
                                   const problem_info *pinfo, uint max_node_length,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                   queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
                                   const cost_type UB)
 {
-  const uint bId = blockIdx.x;
+  const uint bId = blockIdx.x, psize = pinfo->psize;
   uint *my_addresses = &addresses_space[bId * max_node_length];
   if (bId > 0)
   {
@@ -81,17 +67,16 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 }
 
 __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                               uint psize, uint ncommodities, uint *addresses_space, node_info *node_space,
+                               uint *addresses_space, node_info *node_space,
                                const problem_info *pinfo, uint max_node_length,
                                queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
                                const cost_type UB,
                                bnb_stats *stats)
 {
-
+  const uint psize = pinfo->psize;
   if (blockIdx.x > 0)
   {
-    uint ns = 8;
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
     __shared__ uint popped_index;
     while (!opt_reached.load(cuda::memory_order_relaxed) &&
@@ -104,40 +89,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       __syncthreads();
 
       // Wait for POP to be done
-      // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
-      // if (threadIdx.x == 0)
-      // {
-      //   pop_reset = true;
-      // }
-      // __syncthreads();
-      do
-      {
-        if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
-        {
-          // if (threadIdx.x == 0)
-          // {
-          //   printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
-          // }
-          // __syncthreads();
-          break;
-        }
-        __syncthreads();
-        // optimality reached while a block is waiting for a pop
-        // if (threadIdx.x == 0 && pop_reset)
-        // {
-        //   pop_reset = false;
-        // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
-        // }
-        // __syncthreads();
-        if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
-        {
-          if (threadIdx.x == 0)
-            DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
-          __syncthreads();
-          return;
-        }
-      } while (ns = my_sleep(ns));
-      __syncthreads();
+      wait_for_pop(queue_space);
+
       // copy from queue space to work space
       node *a = work_space[blockIdx.x].nodes;
       if (threadIdx.x == 0)
@@ -148,48 +101,14 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       }
       __syncthreads();
       uint lvl = a[0].value->level;
+
       // Check feasibility for budget constraints
-      __shared__ weight_type budget;
       __shared__ bool feasible;
-      if (threadIdx.x == 0)
-      {
-        feasible = true;
-      }
-      __syncthreads();
-      for (uint i = 0; i < ncommodities; i++)
-      {
-        if (threadIdx.x == 0)
-          budget = 0;
-        __syncthreads();
-        for (uint tid = threadIdx.x; tid < psize; tid += blockDim.x)
-        {
-          if (a[0].value->fixed_assignments[tid] != 0)
-            atomicAdd(&budget, pinfo->weights[i * psize * psize + tid * psize + a[0].value->fixed_assignments[tid] - 1]);
-        }
-        __syncthreads();
-        if (threadIdx.x == 0)
-        {
-          if (budget > pinfo->budgets[i])
-          {
-            feasible = false;
-            atomicAdd(&stats->nodes_pruned_infeasible, 1);
-          }
-        }
-        __syncthreads();
-        if (!feasible)
-          break;
-      }
-      __syncthreads();
+      feas_check(pinfo, a, stats, feasible);
       if (feasible)
       {
         // Update bounds of the popped node
-        for (uint i = threadIdx.x; i < psize; i += blockDim.x)
-        {
-          if (a[0].value->fixed_assignments[i] != 0)
-            atomicAdd(&a[0].value->LB, pinfo->costs[i * psize + (a[0].value->fixed_assignments[i] - 1)]);
-        }
-        __syncthreads();
-
+        update_bounds(pinfo, a);
         if (a[0].value->LB < UB)
         {
           if (threadIdx.x == 0)
@@ -264,13 +183,11 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         {
           // DLog(debug, "Node with key %f is pruned\n", a[0].value->LB);
           if (threadIdx.x == 0)
-          {
             atomicAdd(&stats->nodes_pruned_incumbent, 1);
-          }
         }
       }
-      // free the popped node from node space
       __syncthreads();
+      // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                   popped_index);
     }

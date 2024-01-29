@@ -29,7 +29,7 @@ enum ExitCode
   UNKNOWN_ERROR
 };
 
-__forceinline__ __device__ const char *
+__device__ __forceinline__ const char *
 getTextForEnum(int enumVal)
 {
   return (const char *[]){
@@ -56,6 +56,7 @@ const char *enum_to_str(TaskType type)
 
 struct problem_info
 {
+  uint psize, ncommodities;
   cost_type *costs;     // cost of assigning
   weight_type *weights; // weight of each commodity
   weight_type *budgets; // capacity of each commodity
