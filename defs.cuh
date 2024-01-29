@@ -56,6 +56,7 @@ const char *enum_to_str(TaskType type)
 
 struct problem_info
 {
+  uint psize, ncommodities;
   cost_type *costs;     // cost of assigning
   weight_type *weights; // weight of each commodity
   weight_type *budgets; // capacity of each commodity

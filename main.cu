@@ -79,6 +79,8 @@ int main(int argc, char **argv)
   // Copy problem info to device
   problem_info *d_problem_info;
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_problem_info, sizeof(problem_info)));
+  d_problem_info->psize = psize;
+  d_problem_info->ncommodities = ncommodities;
   CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->costs, psize * psize * sizeof(cost_type)));
   CUDA_RUNTIME(cudaMemcpy(d_problem_info->costs, h_problem_info->costs, psize * psize * sizeof(cost_type), cudaMemcpyHostToDevice));
   CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type)));
@@ -173,12 +175,10 @@ int main(int argc, char **argv)
   execKernel(check_queue_global, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail),
              memory_queue_len);
 
-  // execKernel(sanity_prints, 1, 1, dev_, false, d_problem_info);
-
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             psize, d_address_space, d_node_space,
+             d_address_space, d_node_space,
              d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,
@@ -186,7 +186,7 @@ int main(int argc, char **argv)
 
   execKernel(branch_n_bound, psize + 1, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             psize, ncommodities, d_address_space, d_node_space,
+             d_address_space, d_node_space,
              d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,

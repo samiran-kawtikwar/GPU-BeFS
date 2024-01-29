@@ -324,3 +324,42 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
   else
     generate_requests<NODE>(ins_list, INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, queue_space);
 }
+
+__device__ void wait_for_pop(queue_info *queue_space)
+{
+  uint ns = 8;
+  // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
+  // if (threadIdx.x == 0)
+  // {
+  //   pop_reset = true;
+  // }
+  // __syncthreads();
+  do
+  {
+    if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+    {
+      // if (threadIdx.x == 0)
+      // {
+      //   printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
+      // }
+      // __syncthreads();
+      break;
+    }
+    __syncthreads();
+    // optimality reached while a block is waiting for a pop
+    // if (threadIdx.x == 0 && pop_reset)
+    // {
+    //   pop_reset = false;
+    // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
+    // }
+    // __syncthreads();
+    if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+    {
+      if (threadIdx.x == 0)
+        DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
+      __syncthreads();
+      return;
+    }
+  } while (ns = my_sleep(ns));
+  __syncthreads();
+}
