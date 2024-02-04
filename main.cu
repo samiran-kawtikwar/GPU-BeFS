@@ -17,6 +17,7 @@
 #include "RCAP/config.h"
 #include "RCAP/cost_generator.h"
 #include "RCAP/gurobi_solver.h"
+#include "RCAP/subgrad_solver.cuh"
 
 __global__ void get_exit_code(ExitCode *ec)
 {
@@ -90,6 +91,7 @@ int main(int argc, char **argv)
 
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
 
   // Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
   // printf("Exiting...\n");

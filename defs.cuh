@@ -1,7 +1,6 @@
 #pragma once
 #include "queue/queue.cuh"
 
-#define __DEBUG__
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_DATA 0xffffffff
