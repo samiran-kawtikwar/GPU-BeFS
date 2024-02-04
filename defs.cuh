@@ -63,11 +63,10 @@ struct problem_info
 
 struct node_info
 {
-  int fixed_assignments[100]; // To be changed later using appropriate partitions
+  int *fixed_assignments;
   float LB;
   uint level;
   uint id; // For mapping with memory queue; DON'T UPDATE
-  __host__ __device__ node_info() { std::fill(fixed_assignments, fixed_assignments + 100, -1); };
 };
 
 struct node
@@ -106,4 +105,10 @@ struct bnb_stats
   uint nodes_explored;
   uint nodes_pruned_incumbent;
   uint nodes_pruned_infeasible;
+  void initialize()
+  {
+    nodes_explored = 1; // for root node
+    nodes_pruned_incumbent = 0;
+    nodes_pruned_infeasible = 0;
+  }
 };
