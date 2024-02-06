@@ -172,39 +172,46 @@ problem_info *generate_problem(Config config, int seed = 45345)
   return info;
 }
 
-void print(problem_info *info)
+void print(problem_info *info, bool costs = true, bool weights = false, bool budgets = false)
 {
   uint psize = info->psize;
   uint ncommodities = info->ncommodities;
-  Log(debug, "Costs: ");
-  for (size_t i = 0; i < psize; i++)
+  if (costs)
   {
-    for (size_t j = 0; j < psize; j++)
-    {
-      printf("%u, ", info->costs[i * psize + j]);
-    }
-    printf("\n");
-  }
-
-  Log(debug, "Weights: ");
-  for (size_t k = 0; k < ncommodities; k++)
-  {
-    printf("Commodity: %lu\n", k);
+    Log(debug, "Costs: ");
     for (size_t i = 0; i < psize; i++)
     {
       for (size_t j = 0; j < psize; j++)
       {
-        printf("%u, ", info->weights[k * psize * psize + i * psize + j]);
+        printf("%u, ", info->costs[i * psize + j]);
       }
       printf("\n");
     }
+  }
+  if (weights)
+  {
+    Log(debug, "Weights: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("Commodity: %lu\n", k);
+      for (size_t i = 0; i < psize; i++)
+      {
+        for (size_t j = 0; j < psize; j++)
+        {
+          printf("%u, ", info->weights[k * psize * psize + i * psize + j]);
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+  }
+  if (budgets)
+  {
+    Log(debug, "Budgets: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("%u, ", info->budgets[k]);
+    }
     printf("\n");
   }
-
-  Log(debug, "Budgets: ");
-  for (size_t k = 0; k < ncommodities; k++)
-  {
-    printf("%u, ", info->budgets[k]);
-  }
-  printf("\n");
 }

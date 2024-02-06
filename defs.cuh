@@ -85,6 +85,12 @@ struct d_instruction
   __host__ __device__ d_instruction(TaskType req_type, size_t req_len, node *nodes) { type = req_type, num_values = req_len, values = nodes; };
 };
 
+struct subgrad_space
+{
+  float *mult, *g, *lap_costs, LB, LB_old;
+  int *X;
+};
+
 struct queue_info
 {
   TaskType type;

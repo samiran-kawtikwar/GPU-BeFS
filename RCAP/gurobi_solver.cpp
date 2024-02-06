@@ -75,7 +75,6 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
       }
     } while (UB <= LAP_obj);
     model.write("scratch/model.lp");
-    Log(info, "RCAP solved with objective: %u", UB);
 
     delete[] x;
     return UB;

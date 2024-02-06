@@ -69,11 +69,12 @@ int main(int argc, char **argv)
 
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
-  // subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
 
-  // Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
-  // printf("Exiting...\n");
-  // exit(0);
+  weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
+  printf("Exiting...\n");
+  exit(0);
   opt_reached.store(false, cuda::memory_order_release);
   heap_overflow.store(false, cuda::memory_order_release);
 
