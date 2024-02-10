@@ -1,13 +1,11 @@
 #pragma once
 #include "queue/queue.cuh"
+#include "LAP/Hung_lap.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
-#define MAX_DATA 0xffffffff
-#define eps 1e-6
 
 const uint N_RECEPIENTS = 1; // Don't change
-typedef unsigned long long int uint64;
 typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
@@ -89,6 +87,30 @@ struct subgrad_space
 {
   float *mult, *g, *lap_costs, LB, LB_old;
   int *X;
+  TLAP<float> T;
+  __host__ void allocate(uint N, uint K, uint nworkers = 0, uint devID = 0)
+  {
+    nworkers = (nworkers == 0) ? N : nworkers;
+    // allocate space for mult, g, lap_costs, LB, LB_old, X, and th
+    CUDA_RUNTIME(cudaMalloc((void **)&mult, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&g, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&lap_costs, nworkers * N * N * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&X, nworkers * N * N * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(mult, 0, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(g, 0, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(lap_costs, 0, nworkers * N * N * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(X, 0, nworkers * N * N * sizeof(int)));
+    T = TLAP<float>(nworkers, N, devID);
+    T.allocate(nworkers, N, devID);
+  };
+  __host__ void clear()
+  {
+    CUDA_RUNTIME(cudaFree(mult));
+    CUDA_RUNTIME(cudaFree(g));
+    CUDA_RUNTIME(cudaFree(lap_costs));
+    CUDA_RUNTIME(cudaFree(X));
+    // T.th.clear();  -- will be called in the destructor of TLAP since it is declared in stack
+  }
 };
 
 struct queue_info

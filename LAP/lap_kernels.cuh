@@ -2,26 +2,13 @@
 #include "../utils/cuda_utils.cuh"
 #include "device_utils.cuh"
 #include "cub/cub.cuh"
+#include "../defs.cuh"
+#include "block_lap_kernels.cuh"
 
-#define fundef template <typename cost_type = int> \
+#define fundef1 template <typename data = float> \
 __global__ void
 
-__constant__ size_t SIZE;
-__constant__ size_t nrows;
-__constant__ size_t ncols;
-
-__constant__ uint NB4;
-__constant__ uint NBR;
-__constant__ uint n_rows_per_block;
-__constant__ uint n_cols_per_block;
-__constant__ uint log2_n, log2_cost_type_block_size, cost_type_block_size;
-__constant__ uint n_blocks_step_4;
-
-const int max_threads_per_block = 1024;
-const int columns_per_block_step_4 = 512;
-const int n_threads_reduction = 256;
-
-fundef init(GLOBAL_HANDLE<cost_type> gh)
+fundef1 init(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   // initializations
@@ -35,10 +22,10 @@ fundef init(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef calc_col_min(GLOBAL_HANDLE<cost_type> gh)
+fundef1 calc_col_min(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)threadIdx.x * SIZE + (size_t)blockIdx.x;
-  cost_type thread_min = (cost_type)MAX_DATA;
+  data thread_min = (data)MAX_DATA;
 
   while (i < SIZE * SIZE)
   {
@@ -46,7 +33,7 @@ fundef calc_col_min(GLOBAL_HANDLE<cost_type> gh)
     i += (size_t)blockDim.x * SIZE;
   }
   __syncthreads();
-  typedef cub::BlockReduce<cost_type, n_threads_reduction> BR;
+  typedef cub::BlockReduce<data, n_threads_reduction> BR;
   __shared__ typename BR::TempStorage temp_storage;
   thread_min = BR(temp_storage).Reduce(thread_min, cub::Min());
 
@@ -54,7 +41,7 @@ fundef calc_col_min(GLOBAL_HANDLE<cost_type> gh)
     gh.min_in_rows[blockIdx.x] = thread_min;
 }
 
-fundef col_sub(GLOBAL_HANDLE<cost_type> gh)
+fundef1 col_sub(GLOBAL_HANDLE<data> gh)
 {
   uint i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (i < (size_t)SIZE * SIZE)
@@ -64,16 +51,16 @@ fundef col_sub(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef calc_row_min(GLOBAL_HANDLE<cost_type> gh)
+fundef1 calc_row_min(GLOBAL_HANDLE<data> gh)
 {
-  cost_type thread_min = MAX_DATA;
+  data thread_min = MAX_DATA;
   size_t i = (size_t)blockIdx.x * SIZE + (size_t)threadIdx.x;
   while (i < SIZE * ((size_t)blockIdx.x + 1))
   {
     thread_min = min(thread_min, gh.slack[i]);
     i += blockDim.x;
   }
-  typedef cub::BlockReduce<cost_type, n_threads_reduction> BR;
+  typedef cub::BlockReduce<data, n_threads_reduction> BR;
   __shared__ typename BR::TempStorage temp_storage;
   thread_min = BR(temp_storage).Reduce(thread_min, cub::Min());
 
@@ -84,7 +71,7 @@ fundef calc_row_min(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef row_sub(GLOBAL_HANDLE<cost_type> gh)
+fundef1 row_sub(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   size_t c = i / SIZE;
@@ -97,13 +84,13 @@ fundef row_sub(GLOBAL_HANDLE<cost_type> gh)
     gh.zeros_size_b[i] = 0;
 }
 
-template <typename cost_type = int>
-__device__ bool near_zero(cost_type val)
+template <typename data = int>
+__device__ bool near_zero(data val)
 {
   return ((val < eps) && (val > -eps));
 }
 
-fundef compress_matrix(GLOBAL_HANDLE<cost_type> gh)
+fundef1 compress_matrix(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (i < SIZE * SIZE)
@@ -111,8 +98,8 @@ fundef compress_matrix(GLOBAL_HANDLE<cost_type> gh)
     if (near_zero(gh.slack[i]))
     {
       // atomicAdd(&zeros_size, 1);
-      size_t b = i >> log2_cost_type_block_size;
-      size_t i0 = i & ~((size_t)cost_type_block_size - 1); // == b << log2_cost_type_block_size
+      size_t b = i >> log2_data_block_size;
+      size_t i0 = i & ~((size_t)data_block_size - 1); // == b << log2_data_block_size
       // if (i0 != 0 || b != 0)
       // {
       //   printf("This problem is big! %u\n", i);
@@ -124,7 +111,7 @@ fundef compress_matrix(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef add_reduction(GLOBAL_HANDLE<cost_type> gh)
+fundef1 add_reduction(GLOBAL_HANDLE<data> gh)
 {
   __shared__ int scost_type[1024]; // hard coded need to change!
   const int i = threadIdx.x;
@@ -146,7 +133,7 @@ fundef add_reduction(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef step_2(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_2(GLOBAL_HANDLE<data> gh)
 {
   uint i = threadIdx.x;
   uint b = blockIdx.x;
@@ -163,7 +150,7 @@ fundef step_2(GLOBAL_HANDLE<cost_type> gh)
     __syncthreads();
     for (int j = i; j < gh.zeros_size_b[b]; j += blockDim.x)
     {
-      uint z = gh.zeros[(b << log2_cost_type_block_size) + j];
+      uint z = gh.zeros[(b << log2_data_block_size) + j];
       uint l = z % nrows;
       uint c = z / nrows;
       if (gh.cover_row[l] == 0 &&
@@ -193,7 +180,7 @@ fundef step_2(GLOBAL_HANDLE<cost_type> gh)
     repeat_kernel = true;
 }
 
-fundef step_3_init(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_3_init(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (i < nrows)
@@ -205,7 +192,7 @@ fundef step_3_init(GLOBAL_HANDLE<cost_type> gh)
     n_matches = 0;
 }
 
-fundef step_3(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_3(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   __shared__ int matches;
@@ -233,7 +220,7 @@ fundef step_3(GLOBAL_HANDLE<cost_type> gh)
 // uncovered zeros left. Save the smallest uncovered value and
 // Go to Step 6.
 
-fundef step_4_init(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_4_init(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (i < SIZE)
@@ -243,7 +230,7 @@ fundef step_4_init(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef step_4(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_4(GLOBAL_HANDLE<data> gh)
 {
   __shared__ bool s_found;
   __shared__ bool s_goto_5;
@@ -267,7 +254,7 @@ fundef step_4(GLOBAL_HANDLE<cost_type> gh)
     for (size_t j = threadIdx.x; j < gh.zeros_size_b[b]; j += blockDim.x)
     {
       // each thread picks a zero!
-      size_t z = gh.zeros[(size_t)(b << (size_t)log2_cost_type_block_size) + j];
+      size_t z = gh.zeros[(size_t)(b << (size_t)log2_data_block_size) + j];
       int l = z % nrows; // row
       int c = z / nrows; // column
       int c1 = gh.column_of_star_at_row[l];
@@ -298,11 +285,11 @@ fundef step_4(GLOBAL_HANDLE<cost_type> gh)
     goto_5 = true;
 }
 
-template <typename cost_type = int, uint blockSize = n_threads_reduction>
-__global__ void min_reduce_kernel1(volatile cost_type *g_icost_type, volatile cost_type *g_ocost_type,
-                                   const size_t n, GLOBAL_HANDLE<cost_type> gh)
+template <typename data = float, uint blockSize = n_threads_reduction>
+__global__ void min_reduce_kernel1(volatile data *g_icost_type, volatile data *g_ocost_type,
+                                   const size_t n, GLOBAL_HANDLE<data> gh)
 {
-  __shared__ cost_type scost_type[blockSize];
+  __shared__ data scost_type[blockSize];
   const uint tid = threadIdx.x;
   size_t i = (size_t)blockIdx.x * ((size_t)blockSize * 2) + (size_t)tid;
   size_t gridSize = (size_t)blockSize * 2 * (size_t)gridDim.x;
@@ -313,7 +300,7 @@ __global__ void min_reduce_kernel1(volatile cost_type *g_icost_type, volatile co
     size_t i2 = i + blockSize;
     size_t l1 = i1 % nrows; // local index within the row
     size_t c1 = i1 / nrows; // Row number
-    cost_type g1 = MAX_DATA, g2 = MAX_DATA;
+    data g1 = MAX_DATA, g2 = MAX_DATA;
     if (gh.cover_row[l1] == 1 || gh.cover_column[c1] == 1)
       g1 = MAX_DATA;
     else
@@ -331,15 +318,15 @@ __global__ void min_reduce_kernel1(volatile cost_type *g_icost_type, volatile co
     i += gridSize;
   }
   __syncthreads();
-  typedef cub::BlockReduce<cost_type, blockSize> BlockReduce;
+  typedef cub::BlockReduce<data, blockSize> BlockReduce;
   __shared__ typename BlockReduce::TempStorage temp_storage;
-  cost_type val = scost_type[tid];
-  cost_type minimum = BlockReduce(temp_storage).Reduce(val, cub::Min());
+  data val = scost_type[tid];
+  data minimum = BlockReduce(temp_storage).Reduce(val, cub::Min());
   if (tid == 0)
     g_ocost_type[blockIdx.x] = minimum;
 }
 
-fundef step_6_init(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_6_init(GLOBAL_HANDLE<data> gh)
 {
   size_t id = (size_t)threadIdx.x + (size_t)blockIdx.x * (size_t)blockDim.x;
   if (threadIdx.x == 0)
@@ -360,7 +347,7 @@ zero of the series, star each primed zero of the series, erase
 all primes and uncover every line in the matrix. Return to Step 3.*/
 
 // Eliminates joining paths
-fundef step_5a(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_5a(GLOBAL_HANDLE<data> gh)
 {
   size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (i < SIZE)
@@ -382,7 +369,7 @@ fundef step_5a(GLOBAL_HANDLE<cost_type> gh)
 }
 
 // Applies the alternating paths
-fundef step_5b(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_5b(GLOBAL_HANDLE<data> gh)
 {
   size_t j = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   if (j < SIZE)
@@ -413,7 +400,7 @@ fundef step_5b(GLOBAL_HANDLE<cost_type> gh)
   }
 }
 
-fundef step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<cost_type> gh)
+fundef1 step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<data> gh)
 {
   // STEP 6:
   /*STEP 6: Add the minimum uncovered value to every element of each covered
@@ -442,10 +429,26 @@ fundef step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<cost_type> gh)
     // compress matrix
     if (near_zero(reg))
     {
-      size_t b = i >> log2_cost_type_block_size;
-      size_t i0 = i & ~((size_t)cost_type_block_size - 1); // == b << log2_cost_type_block_size
+      size_t b = i >> log2_data_block_size;
+      size_t i0 = i & ~((size_t)data_block_size - 1); // == b << log2_data_block_size
       size_t j = (size_t)atomicAdd((uint64 *)gh.zeros_size_b + b, 1ULL);
       gh.zeros[i0 + j] = i;
     }
   }
+}
+
+fundef1 get_objective(GLOBAL_HANDLE<data> gh)
+{
+  __shared__ data objective;
+  if (threadIdx.x == 0)
+    objective = 0;
+  __syncthreads();
+  for (size_t r = threadIdx.x; r < SIZE; r += blockDim.x)
+  {
+    size_t c = gh.column_of_star_at_row[r];
+    atomicAdd(&objective, gh.cost[SIZE * c + r]);
+  }
+  __syncthreads();
+  if (threadIdx.x == 0)
+    gh.objective[0] = objective;
 }

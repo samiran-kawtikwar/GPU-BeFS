@@ -73,12 +73,11 @@ int main(int argc, char **argv)
 
   weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
-  printf("Exiting...\n");
-  exit(0);
+
   opt_reached.store(false, cuda::memory_order_release);
   heap_overflow.store(false, cuda::memory_order_release);
 
-  Log(debug, "Solving RCAP with Branching");
+  // Log(debug, "Solving RCAP with Branching");
   Timer t = Timer();
 
   // Create space for queue
@@ -98,9 +97,20 @@ int main(int argc, char **argv)
   delete[] h_queue_space;
 
   // Create space for bound computation and branching
+  Log(debug, "Creating space for subgrad solver");
   work_info *d_work_space;
   CUDA_RUNTIME(cudaMalloc((void **)&d_work_space, queue_size * sizeof(work_info)));
   CUDA_RUNTIME(cudaMemset((void *)d_work_space, 0, queue_size * sizeof(work_info)));
+
+  subgrad_space *d_subgrad_space;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, queue_size * sizeof(subgrad_space)));
+  d_subgrad_space->allocate(psize, ncommodities, queue_size, dev_);
+  Log(debug, "Subgrad space allocated");
+
+  // Call subgrad_solver Block
+  // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  printf("Exiting...\n");
+  exit(0);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
