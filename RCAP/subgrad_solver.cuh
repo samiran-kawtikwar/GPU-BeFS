@@ -1,28 +1,23 @@
 #pragma once
 
-#include "../utils/logger.cuh"
-#include "stdio.h"
-#include "gurobi_solver.h"
-#include <sstream>
-
-#include "../LAP/Hung_lap.cuh"
+#include "subgrad_utils.cuh"
 
 template <typename cost_type, typename weight_type>
 weight_type subgrad_solver(const cost_type *original_costs, cost_type upper, const weight_type *weights, weight_type *budgets, uint N, uint K, uint dev_ = 0)
 {
   Log(info, "Starting subgrad solver");
   // For root nodew
-  float *LB = new float[100], UB = float(upper), max_LB;
+  float *LB = new float[MAX_ITER], UB = float(upper), max_LB;
   float *mult = new float[K];
   int *X = new int[N * N];
   float *g = new float[K];
   std::fill(mult, mult + K, 0);
   std::fill(X, X + N * N, 0);
-  std::fill(LB, LB + 100, 0);
+  std::fill(LB, LB + MAX_ITER, 0);
   float *lap_costs;
   CUDA_RUNTIME(cudaMallocManaged((void **)&lap_costs, N * N * sizeof(float)));
   float lrate = 2;
-  for (size_t t = 0; t < 100; t++)
+  for (size_t t = 0; t < MAX_ITER; t++)
   {
     std::fill(lap_costs, lap_costs + N * N, 0);
     std::fill(g, g + K, 0);
@@ -50,14 +45,7 @@ weight_type subgrad_solver(const cost_type *original_costs, cost_type upper, con
     LB[t] = lap.full_solve() - neg;
     // lap.print_solution();
     lap.get_X(X);
-    float my_UB = 0;
-    for (size_t i = 0; i < N; i++)
-    {
-      for (size_t j = 0; j < N; j++)
-      {
-        my_UB += float(X[i * N + j] * original_costs[i * N + j]);
-      }
-    }
+
     // Find the difference between the sum of the costs and the budgets
     for (size_t k = 0; k < K; k++)
     {
@@ -77,12 +65,14 @@ weight_type subgrad_solver(const cost_type *original_costs, cost_type upper, con
       denom += g[k] * g[k];
       feas += max(float(0), g[k]);
     }
-    Log(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %.3f, real: %.3f, Infeasibility: %.3f", t, LB[t], UB, lrate, my_UB, feas);
     if (feas < eps)
     {
       Log(debug, "Found feasible solution");
-      break;
+      // Update UB if needed
+
+      goto ret;
     }
+    Log(info, "It %d, LB: %.3f, UB: %.3f, lrate: %.3f, Infeasibility: %.3f", t, LB[t], UB, lrate, feas);
     // Update multipliers according to subgradient rule
     for (size_t k = 0; k < K; k++)
     {
@@ -116,148 +106,119 @@ weight_type subgrad_solver(const cost_type *original_costs, cost_type upper, con
 
     if ((t + 1) % 5 == 0 && LB[t] <= LB[t - 4])
       lrate /= 2;
-    if (lrate < 0.1)
+    if (lrate < 0.005)
       break;
   }
   // max_LB = max(LB)
-  max_LB = *std::max_element(LB, LB + 100);
+ret:
+  max_LB = ceil(*std::max_element(LB, LB + MAX_ITER));
+  Log(info, "Subgrad Solver Gap: %.3f%%", (UB - max_LB) * 100 / UB);
   delete[] mult;
   delete[] X;
   delete[] g;
   delete[] LB;
   CUDA_RUNTIME(cudaFree(lap_costs));
-  return uint(ceil(max_LB));
+  // Print Gap
+  return uint(max_LB);
 }
 
 // Solve subgradient with a block
 __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *space, float UB)
 {
-  // Assume a is a root node
   const uint N = pinfo->psize, K = pinfo->ncommodities;
-  float *mult = space->mult, *g = space->g, *lap_costs = space->lap_costs;
-  int *X = space->X;
-  float *LB = &space->LB, *LB_old = &space->LB_old;
-  UB += 2;
-  __shared__ float lrate, denom;
+  float *mult = &space->mult[blockIdx.x * K];
+  float *g = &space->g[blockIdx.x * K];
+  float *lap_costs = &space->lap_costs[blockIdx.x * N * N];
+  int *X = &space->X[blockIdx.x * N * N];
+  float *LB = &space->LB[blockIdx.x * MAX_ITER];
+  float *real_obj = &space->real_obj[blockIdx.x];
+
+  __shared__ float lrate, denom, feas, neg;
   __shared__ bool restart, terminate;
-  // reset mult, g to zero
-  for (size_t k = threadIdx.x; k < K; k += blockDim.x)
-  {
-    mult[k] = 0;
-    g[k] = 0;
-  }
-  __syncthreads();
-  if (threadIdx.x == 0)
-  {
-    restart = false;
-    terminate = false;
-    lrate = 0.25;
-  }
-  __syncthreads();
+  __shared__ uint t;
+
+  // Initialize
+  init(mult, g, LB,
+       restart, terminate, lrate, t, K);
+
   __shared__ GLOBAL_HANDLE<float> gh;
   __shared__ SHARED_HANDLE sh;
-  set_handles(gh, space->T.th);
-  for (size_t t = 0; t < 1000; t++)
-  {
-    for (int k = threadIdx.x; k < K; k += blockDim.x)
-    {
-      g[k] = 0;
-      if (restart)
-        mult[k] = 0;
-    }
-    __syncthreads();
-    if (threadIdx.x == 0)
-    {
-      LB_old[0] = LB[0];
-      denom = 0;
-      restart = false;
-    }
-    __syncthreads();
-    for (size_t i = threadIdx.x; i < N * N; i += blockDim.x)
-    {
-      // uint r = i / N, c = i % N;
-      lap_costs[i] = pinfo->costs[i];
-      float sum = 0;
-      for (size_t k = 0; k < K; k++)
-      {
-        sum += mult[k] * pinfo->weights[k * N * N + i];
-      }
-      lap_costs[i] += sum;
-    }
-    __syncthreads();
-    // solve block-LAP
-    gh.cost = lap_costs;
 
+  set_handles(gh, space->T.th);
+  gh.cost = lap_costs;
+
+  while (t < MAX_ITER)
+  {
+    reset(g, mult, denom, feas, neg, restart, K);
+
+    update_lap_costs(lap_costs, pinfo, mult, neg, N, K);
+    // print lap_costs
+    // if (threadIdx.x == 0)
+    // {
+    //   for (size_t i = 0; i < N; i++)
+    //   {
+    //     for (size_t j = 0; j < N; j++)
+    //     {
+    //       printf("%.2f ", lap_costs[i * N + j]);
+    //     }
+    //     printf("\n");
+    //   }
+    // }
+    // __syncthreads();
+
+    // Solve the LAP
     BHA<float>(gh, sh);
+
     get_objective_block(gh);
+
     if (threadIdx.x == 0)
-    {
-      LB[0] = gh.objective[0];
-    }
+      LB[t] = gh.objective[0] - neg;
     __syncthreads();
+
     get_X(gh, X);
 
     // Find the difference between the sum of the costs and the budgets
-    for (int k = 0; k < K; k++)
-    {
-      for (int i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
-      {
-        atomicAdd(&g[k], float(X[i] * pinfo->weights[k * N * N + i]));
-      }
-      __syncthreads();
-      if (threadIdx.x == 0)
-      {
-        g[k] -= float(pinfo->budgets[k]);
-        denom += g[k] * g[k];
-      }
-      __syncthreads();
-    }
+    get_denom(g, real_obj, X, denom, feas,
+              pinfo, N, K);
+
+    check_feasibility(pinfo, gh, LB[t], terminate, feas);
+    if (terminate)
+      break;
+
     // Update multipliers according to subgradient rule
-    for (size_t k = threadIdx.x; k < K; k += blockDim.x)
-    {
-      mult[k] += max(float(0), lrate * (g[k] * (UB - LB[0])) / denom);
-    }
-    __syncthreads();
+    update_mult(mult, g, lrate, denom, LB[t], UB, K);
+
     if (threadIdx.x == 0)
     {
-      DLog(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %f\n", t, LB[0], UB, lrate);
-
-      // Print gh.costs
-      // for (size_t i = 0; i < N; i++)
-      // {
-      //   for (size_t j = 0; j < N; j++)
-      //     printf("%.2f ", gh.cost[i * N + j]);
-      //   printf("\n");
-      // }
-      // print mult and g
-      // for (size_t i = 0; i < K; i++)
-      //   printf("%.2f ", mult[i]);
-      // printf("\n");
-      // for (size_t i = 0; i < K; i++)
-      //   printf("%.2f ", g[i]);
-      // printf("\n");
-      // printf("denom: %.2f\n", denom);
-
-      if (LB_old[0] > LB[0])
-        lrate /= 2;
-      if (abs(LB_old[0] - LB[0]) / LB[0] < 1E-6)
-        terminate = true;
-      if (LB[0] > UB + 1 && t < 5)
+      DLog(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %.3f, Infeasibility: %.3f\n", t, LB[t], UB, lrate, feas);
+      if ((t > 0 && t < 5 && LB[t] < LB[t - 1]) || LB[t] < 0)
       {
         DLog(debug, "Initial Step size too large, restart with smaller step size\n");
         lrate /= 2;
         t = 0;
-        LB[0] = 0;
         restart = true;
       }
+      if ((t + 1) % 5 == 0 && LB[t] <= LB[t - 4])
+        lrate /= 2;
+      if (lrate < 0.005)
+        terminate = true;
+      t++;
     }
     __syncthreads();
     if (terminate)
       break;
   }
+
+  // Use cub to take the max of the LB array
+  get_LB(LB, space->max_LB[0]);
+
+  if (threadIdx.x == 0)
+  {
+    DLog(info, "Max LB: %.3f\n", space->max_LB[0]);
+    DLog(info, "Subgrad Solver Gap: %.3f%%\n", (UB - space->max_LB[0]) * 100 / UB);
+  }
 }
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)
 {
-
   subgrad_solver_block(pinfo, space, UB);
 }

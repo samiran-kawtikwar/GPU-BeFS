@@ -108,7 +108,7 @@ int main(int argc, char **argv)
   Log(debug, "Subgrad space allocated");
 
   // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
   printf("Exiting...\n");
   exit(0);
 
