@@ -4,6 +4,7 @@
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
+#define MAX_ITER 100
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;
@@ -85,7 +86,7 @@ struct d_instruction
 
 struct subgrad_space
 {
-  float *mult, *g, *lap_costs, LB, LB_old;
+  float *mult, *g, *lap_costs, *LB, *real_obj, *max_LB;
   int *X;
   TLAP<float> T;
   __host__ void allocate(uint N, uint K, uint nworkers = 0, uint devID = 0)
@@ -96,10 +97,18 @@ struct subgrad_space
     CUDA_RUNTIME(cudaMalloc((void **)&g, nworkers * K * sizeof(float)));
     CUDA_RUNTIME(cudaMalloc((void **)&lap_costs, nworkers * N * N * sizeof(float)));
     CUDA_RUNTIME(cudaMalloc((void **)&X, nworkers * N * N * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&LB, nworkers * MAX_ITER * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&max_LB, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&real_obj, nworkers * sizeof(float)));
+
     CUDA_RUNTIME(cudaMemset(mult, 0, nworkers * K * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(g, 0, nworkers * K * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(lap_costs, 0, nworkers * N * N * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(X, 0, nworkers * N * N * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(LB, 0, nworkers * MAX_ITER * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(max_LB, 0, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
+
     T = TLAP<float>(nworkers, N, devID);
     T.allocate(nworkers, N, devID);
   };

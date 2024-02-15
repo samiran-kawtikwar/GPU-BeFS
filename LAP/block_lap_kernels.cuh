@@ -21,7 +21,7 @@ __constant__ uint n_blocks_step_4;
 
 const int max_threads_per_block = 1024;
 const int columns_per_block_step_4 = 512;
-const int n_threads_reduction = 32;
+const int n_threads_reduction = 512;
 
 fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
 {
@@ -559,20 +559,24 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 }
 
 template <typename data = float>
-__device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh)
+__device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh, const data *cost = nullptr)
 {
   typedef cub::BlockReduce<data, n_threads_reduction> BR;
   __shared__ typename BR::TempStorage temp_storage;
   data obj = 0;
+  if (cost == nullptr)
+    cost = gh.cost;
   for (uint r = threadIdx.x; r < SIZE; r += blockDim.x)
   {
     int c = gh.column_of_star_at_row[r];
-    obj += gh.cost[c * SIZE + r];
+    obj += cost[c * SIZE + r];
     // printf("c= %d r= %d\n", r, c);
   }
   obj = BR(temp_storage).Reduce(obj, cub::Sum());
   if (threadIdx.x == 0)
+  {
     gh.objective[0] = obj;
+  }
   __syncthreads();
 }
 
