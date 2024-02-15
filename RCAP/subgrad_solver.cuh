@@ -6,7 +6,7 @@ template <typename cost_type, typename weight_type>
 weight_type subgrad_solver(const cost_type *original_costs, cost_type upper, const weight_type *weights, weight_type *budgets, uint N, uint K, uint dev_ = 0)
 {
   Log(info, "Starting subgrad solver");
-  // For root nodew
+  // For root node
   float *LB = new float[MAX_ITER], UB = float(upper), max_LB;
   float *mult = new float[K];
   int *X = new int[N * N];
