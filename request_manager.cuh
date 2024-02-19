@@ -85,7 +85,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             {
               if (threadIdx.x == 0)
               {
-                DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
+                // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
                 invalid_count++;
                 // send the pop request back to the queue

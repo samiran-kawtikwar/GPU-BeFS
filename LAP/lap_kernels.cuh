@@ -452,3 +452,32 @@ fundef1 get_objective(GLOBAL_HANDLE<data> gh)
   if (threadIdx.x == 0)
     gh.objective[0] = objective;
 }
+
+fundef1 col_from_row(GLOBAL_HANDLE<data> gh, int *row_wise_fa, int *col_wise_fa)
+{
+  size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
+  if (i < SIZE)
+  {
+    uint j = row_wise_fa[i];
+    if (j != 0)
+      col_wise_fa[j - 1] = i + 1;
+  }
+}
+
+fundef1 update_cost(GLOBAL_HANDLE<data> gh, int *row_wise_fa, int *col_wise_fa)
+{
+  size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
+  if (i < SIZE * SIZE)
+  {
+    size_t c = i % nrows;
+    size_t r = i / nrows;
+    if (row_wise_fa[r] != 0 && row_wise_fa[r] != c + 1)
+    {
+      gh.cost[i] = (data)MAX_DATA;
+    }
+    if (col_wise_fa[c] != 0 && col_wise_fa[c] != r + 1)
+    {
+      gh.cost[i] = (data)MAX_DATA;
+    }
+  }
+}

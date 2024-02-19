@@ -6,30 +6,47 @@
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
 
-__device__ __forceinline__ void feas_check(const problem_info *pinfo, const node *a, bnb_stats *stats, bool &feasible)
+__device__ __forceinline__ void feas_check(const problem_info *pinfo, const node *a, int *col_fa,
+                                           float *lap_costs, bnb_stats *stats, bool &feasible,
+                                           GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
 {
   const uint psize = pinfo->psize, ncommmodities = pinfo->ncommodities;
+  const int *row_fa = a->value->fixed_assignments;
   if (threadIdx.x == 0)
   {
     feasible = true;
   }
   __syncthreads();
 
-  for (uint i = 0; i < ncommmodities; i++)
+  // set col_fa using row_fa
+  for (uint i = threadIdx.x; i < psize; i += blockDim.x)
   {
-    __shared__ weight_type budget;
-    if (threadIdx.x == 0)
-      budget = 0;
-    __syncthreads();
-    for (uint tid = threadIdx.x; tid < psize; tid += blockDim.x)
+    col_fa[i] = 0;
+  }
+  __syncthreads();
+  for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+  {
+    if (row_fa[i] != 0)
+      col_fa[row_fa[i] - 1] = i + 1;
+  }
+  __syncthreads();
+
+  gh.cost = lap_costs;
+  for (uint k = 0; k < ncommmodities; k++)
+  {
+    // copy weights to lap_costs for further operations
+    for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
     {
-      if (a[0].value->fixed_assignments[tid] != 0)
-        atomicAdd(&budget, pinfo->weights[i * psize * psize + tid * psize + a[0].value->fixed_assignments[tid] - 1]);
+      lap_costs[i] = float(pinfo->weights[k * psize * psize + i]) + 0.1;
     }
     __syncthreads();
+
+    BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa);
+    get_objective_block(gh);
     if (threadIdx.x == 0)
     {
-      if (budget > pinfo->budgets[i])
+      float used_budget = gh.objective[0];
+      if (used_budget > pinfo->budgets[k])
       {
         feasible = false;
         atomicAdd(&stats->nodes_pruned_infeasible, 1);

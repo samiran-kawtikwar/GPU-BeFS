@@ -7,6 +7,8 @@
 #include "defs.cuh"
 #include "RCAP/rcap_kernels.cuh"
 
+#include "LAP/Hung_lap.cuh"
+
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   uint *addresses_space, node_info *node_space,
                                   const problem_info *pinfo, uint max_node_length,
@@ -67,7 +69,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 }
 
 __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                               uint *addresses_space, node_info *node_space,
+                               uint *addresses_space, node_info *node_space, subgrad_space *subgrad_space,
                                const problem_info *pinfo, uint max_node_length,
                                queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
@@ -78,6 +80,13 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   if (blockIdx.x > 0)
   {
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
+    int *col_fa = work_space[blockIdx.x].col_fixed_assignments;
+    float *lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
+    __shared__ GLOBAL_HANDLE<float> gh;
+    __shared__ SHARED_HANDLE sh;
+
+    set_handles(gh, subgrad_space->T.th);
+
     __shared__ uint popped_index;
     while (!opt_reached.load(cuda::memory_order_relaxed) &&
            !heap_overflow.load(cuda::memory_order_relaxed))
@@ -93,6 +102,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
       // copy from queue space to work space
       node *a = work_space[blockIdx.x].nodes;
+
       if (threadIdx.x == 0)
       {
         a[0] = queue_space[blockIdx.x].nodes[0];
@@ -104,7 +114,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
       // Check feasibility for budget constraints
       __shared__ bool feasible;
-      feas_check(pinfo, a, stats, feasible);
+      feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
+
       if (feasible)
       {
         // Update bounds of the popped node

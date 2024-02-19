@@ -21,7 +21,7 @@ __constant__ uint n_blocks_step_4;
 
 const int max_threads_per_block = 1024;
 const int columns_per_block_step_4 = 512;
-const int n_threads_reduction = 512;
+const int n_threads_reduction = 32;
 
 fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
 {
@@ -470,7 +470,6 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
   __syncthreads();
   block_col_sub(gh);
   __syncthreads();
-  // checkpoint();
 
   // printArray(gh.min_in_rows, SIZE, "rowmin");
   // printArray(gh.min_in_cols, SIZE, "colmin");
@@ -534,6 +533,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       __syncthreads();
       block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, SIZE * SIZE, gh);
       __syncthreads();
+
       if (gh.d_min_in_mat[0] <= eps)
       {
         __syncthreads();
@@ -556,6 +556,33 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
     block_step_5b(gh);
     __syncthreads();
   }
+}
+
+fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa)
+{
+  for (uint i = threadIdx.x; i < SIZE; i += blockDim.x)
+  {
+    int j = row_fa[i];
+    if (j != 0)
+      col_fa[j - 1] = i + 1;
+  }
+  __syncthreads();
+  for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
+  {
+    uint c = i % SIZE;
+    uint r = i / SIZE;
+    if (row_fa[r] != 0 && row_fa[r] != c + 1)
+    {
+      gh.cost[i] = (data)MAX_DATA - 1000;
+    }
+    if (col_fa[c] != 0 && col_fa[c] != r + 1)
+    {
+      gh.cost[i] = (data)MAX_DATA - 1000;
+    }
+  }
+  __syncthreads();
+
+  BHA(gh, sh);
 }
 
 template <typename data = float>

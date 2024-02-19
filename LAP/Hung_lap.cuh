@@ -69,7 +69,6 @@ public:
     CUDA_RUNTIME(cudaMalloc((void **)&gh.d_min_in_mat_vect, num_blocks_reduction * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&gh.d_min_in_mat, 1 * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&gh.objective, 1 * sizeof(cost_type)));
-
     CUDA_RUNTIME(cudaMemcpy(gh.slack, cost_, size * size * sizeof(cost_type), cudaMemcpyDefault));
     // CUDA_RUNTIME(cudaMemcpy(gh.cost, cost_, size * size * sizeof(cost_type), cudaMemcpyDefault));
     gh.cost = cost_;
@@ -206,6 +205,28 @@ public:
     // }
     return gh.objective[0];
   };
+  cost_type solve_with_fa(int *row_fa)
+  {
+    int *d_row_fa, *d_col_fa;
+    CUDA_RUNTIME(cudaMalloc((void **)&d_row_fa, h_nrows * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_col_fa, h_nrows * sizeof(int)));
+    CUDA_RUNTIME(cudaMemcpy(d_row_fa, row_fa, h_nrows * sizeof(int), cudaMemcpyDefault));
+    CUDA_RUNTIME(cudaMemset(d_col_fa, 0, h_nrows * sizeof(int)));
+    // Update cost of undesired assignments to infinity
+    const uint n_threads = (uint)min(size_, 64UL);
+    const size_t n_blocks = (size_t)ceil((size_ * 1.0) / n_threads);
+    execKernel(col_from_row, n_blocks, n_threads, dev_, false, gh, d_row_fa, d_col_fa);
+
+    const uint n_threads_full = (uint)min(size_, 512UL);
+    const size_t n_blocks_full = (size_t)ceil((size_ * size_ * 1.0) / n_threads_full);
+    execKernel(update_cost, n_blocks_full, n_threads_full, dev_, false, gh, d_row_fa, d_col_fa);
+
+    CUDA_RUNTIME(cudaFree(d_row_fa));
+    CUDA_RUNTIME(cudaFree(d_col_fa));
+
+    CUDA_RUNTIME(cudaMemcpy(gh.slack, gh.cost, size_ * size_ * sizeof(cost_type), cudaMemcpyDefault));
+    return full_solve();
+  }
   void print_solution()
   {
     for (uint r = 0; r < h_nrows; r++)

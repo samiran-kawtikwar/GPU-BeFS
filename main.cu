@@ -70,14 +70,27 @@ int main(int argc, char **argv)
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
+  // print weights
+  for (size_t i = 0; i < ncommodities; i++)
+  {
+    for (size_t j = 0; j < psize; j++)
+    {
+      for (size_t k = 0; k < psize; k++)
+      {
+        printf("%u ", h_problem_info->weights[i * psize * psize + j * psize + k]);
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
 
-  weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
-  Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
+  // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
 
   opt_reached.store(false, cuda::memory_order_release);
   heap_overflow.store(false, cuda::memory_order_release);
 
-  // Log(debug, "Solving RCAP with Branching");
+  Log(debug, "Solving RCAP with Branching");
   Timer t = Timer();
 
   // Create space for queue
@@ -108,9 +121,9 @@ int main(int argc, char **argv)
   Log(debug, "Subgrad space allocated");
 
   // Call subgrad_solver Block
-  execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
-  printf("Exiting...\n");
-  exit(0);
+  // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  // printf("Exiting...\n");
+  // exit(0);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
@@ -168,7 +181,7 @@ int main(int argc, char **argv)
              memory_queue_len);
 
   // Frist kernel to create L1 nodes
-  execKernel(initial_branching, 2, 32, dev_, true,
+  execKernel(initial_branching, 2, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space,
              d_problem_info, max_node_length,
@@ -176,9 +189,9 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              UB);
 
-  execKernel(branch_n_bound, psize + 1, 32, dev_, true,
+  execKernel(branch_n_bound, psize + 1, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_address_space, d_node_space,
+             d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,

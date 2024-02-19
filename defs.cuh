@@ -109,6 +109,7 @@ struct subgrad_space
     CUDA_RUNTIME(cudaMemset(max_LB, 0, nworkers * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
 
+    Log(debug, "Allocating space for %u LAPs", nworkers);
     T = TLAP<float>(nworkers, N, devID);
     T.allocate(nworkers, N, devID);
   };
@@ -135,6 +136,7 @@ struct work_info
 {
   uint batch_size;
   node nodes[100];
+  int col_fixed_assignments[100];
 };
 
 struct bnb_stats
