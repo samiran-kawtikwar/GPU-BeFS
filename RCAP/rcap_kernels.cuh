@@ -37,7 +37,7 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
     // copy weights to lap_costs for further operations
     for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
     {
-      lap_costs[i] = float(pinfo->weights[k * psize * psize + i]) + 0.1;
+      lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
     }
     __syncthreads();
 

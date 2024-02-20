@@ -83,7 +83,7 @@ fundef void block_calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
   // size_t i = (size_t)blockIdx.x * SIZE + (size_t)threadIdx.x;
   for (size_t row = 0; row < SIZE; row++)
   {
-    data thread_min = MAX_DATA;
+    data thread_min = (float)MAX_DATA;
     for (size_t i = threadIdx.x + row * SIZE; i < SIZE * (row + 1); i += blockDim.x)
     {
       thread_min = min(thread_min, gh.slack[i]);
@@ -538,7 +538,10 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       {
         __syncthreads();
         if (threadIdx.x == 0)
+        {
           printf("minimum element in problemID %u is non positive: %f\n", problemID, (float)gh.d_min_in_mat[0]);
+          assert(false);
+        }
         return;
       }
       __syncthreads();
@@ -573,11 +576,11 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
     uint r = i / SIZE;
     if (row_fa[r] != 0 && row_fa[r] != c + 1)
     {
-      gh.cost[i] = (data)MAX_DATA - 1000;
+      gh.cost[i] = (data)MAX_DATA;
     }
     if (col_fa[c] != 0 && col_fa[c] != r + 1)
     {
-      gh.cost[i] = (data)MAX_DATA - 1000;
+      gh.cost[i] = (data)MAX_DATA;
     }
   }
   __syncthreads();
@@ -633,8 +636,8 @@ fundef void set_handles(GLOBAL_HANDLE<data> &gh, TILED_HANDLE<data> &th)
     gh.column_of_star_at_row = &th.column_of_star_at_row[blockIdx.x * nrows];
     gh.objective = &th.objective[blockIdx.x];
     gh.objective[0] = 0;
-    gh.min_in_rows = &th.min_in_rows[blockIdx.x];
-    gh.min_in_cols = &th.min_in_cols[blockIdx.x];
+    gh.min_in_rows = &th.min_in_rows[blockIdx.x * SIZE];
+    gh.min_in_cols = &th.min_in_cols[blockIdx.x * SIZE];
     gh.row_of_star_at_column = &th.row_of_star_at_column[blockIdx.x * ncols];
     gh.zeros = &th.zeros[blockIdx.x * SIZE * SIZE];
     gh.zeros_size_b = &th.zeros_size_b[blockIdx.x * NB4];

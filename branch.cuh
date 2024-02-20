@@ -100,6 +100,9 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       // Wait for POP to be done
       wait_for_pop(queue_space);
 
+      if (opt_reached.load(cuda::memory_order_relaxed))
+        break;
+
       // copy from queue space to work space
       node *a = work_space[blockIdx.x].nodes;
 
@@ -211,14 +214,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   __syncthreads();
   if (threadIdx.x == 0)
   {
-    if (blockIdx.x == 3)
-    {
-      DLog(critical, "Block %u is done\n", blockIdx.x);
-    }
-    else
-    {
-      DLog(debug, "Block %u is done\n", blockIdx.x);
-    }
+    DLog(debug, "Block %u is done\n", blockIdx.x);
   }
 }
 
