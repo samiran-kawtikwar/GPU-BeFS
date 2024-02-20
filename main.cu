@@ -70,19 +70,6 @@ int main(int argc, char **argv)
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
-  // print weights
-  for (size_t i = 0; i < ncommodities; i++)
-  {
-    for (size_t j = 0; j < psize; j++)
-    {
-      for (size_t k = 0; k < psize; k++)
-      {
-        printf("%u ", h_problem_info->weights[i * psize * psize + j * psize + k]);
-      }
-      printf("\n");
-    }
-    printf("\n");
-  }
 
   // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
