@@ -73,10 +73,11 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                                const problem_info *pinfo, uint max_node_length,
                                queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
-                               const cost_type UB,
+                               const cost_type global_UB,
                                bnb_stats *stats)
 {
   const uint psize = pinfo->psize;
+
   if (blockIdx.x > 0)
   {
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
@@ -84,6 +85,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
     float *lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
     __shared__ GLOBAL_HANDLE<float> gh;
     __shared__ SHARED_HANDLE sh;
+    __shared__ float UB;
 
     set_handles(gh, subgrad_space->T.th);
 
@@ -115,6 +117,11 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       __syncthreads();
       uint lvl = a[0].value->level;
 
+      // Reset UB
+      if (threadIdx.x == 0)
+        UB = float(global_UB);
+      __syncthreads();
+
       // Check feasibility for budget constraints
       __shared__ bool feasible;
       feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
@@ -122,8 +129,10 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       if (feasible)
       {
         // Update bounds of the popped node
-        update_bounds(pinfo, a);
-        if (a[0].value->LB < UB)
+        // update_bounds(pinfo, a);
+        update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
+
+        if (a[0].value->LB <= global_UB)
         {
           if (threadIdx.x == 0)
           {
@@ -185,7 +194,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                           request_queue_size, queue_space);
           }
         }
-        else if (lvl == psize && a[0].value->LB <= UB)
+        if (lvl == psize && a[0].value->LB <= global_UB)
         {
           if (threadIdx.x == 0)
           {

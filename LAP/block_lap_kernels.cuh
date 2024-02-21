@@ -563,28 +563,23 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
 fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa)
 {
-  for (uint i = threadIdx.x; i < SIZE; i += blockDim.x)
+  if (row_fa != nullptr && col_fa != nullptr)
   {
-    int j = row_fa[i];
-    if (j != 0)
-      col_fa[j - 1] = i + 1;
-  }
-  __syncthreads();
-  for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
-  {
-    uint c = i % SIZE;
-    uint r = i / SIZE;
-    if (row_fa[r] != 0 && row_fa[r] != c + 1)
+    for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
     {
-      gh.cost[i] = (data)MAX_DATA;
+      uint c = i % SIZE;
+      uint r = i / SIZE;
+      if (row_fa[r] != 0 && row_fa[r] != c + 1)
+      {
+        gh.cost[i] = (data)MAX_DATA;
+      }
+      if (col_fa[c] != 0 && col_fa[c] != r + 1)
+      {
+        gh.cost[i] = (data)MAX_DATA;
+      }
     }
-    if (col_fa[c] != 0 && col_fa[c] != r + 1)
-    {
-      gh.cost[i] = (data)MAX_DATA;
-    }
+    __syncthreads();
   }
-  __syncthreads();
-
   BHA(gh, sh);
 }
 

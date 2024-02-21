@@ -123,7 +123,9 @@ ret:
 }
 
 // Solve subgradient with a block
-__device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *space, float UB)
+__device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *space, float &UB,
+                                     int *row_fa, int *col_fa,
+                                     GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
 {
   const uint N = pinfo->psize, K = pinfo->ncommodities;
   float *mult = &space->mult[blockIdx.x * K];
@@ -137,14 +139,14 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
   __shared__ bool restart, terminate;
   __shared__ uint t;
 
+  // if (threadIdx.x == 0)
+  //   DLog(debug, "Block %u is starting subgrad solver\n", blockIdx.x);
+  // __syncthreads();
+
   // Initialize
   init(mult, g, LB,
        restart, terminate, lrate, t, K);
 
-  __shared__ GLOBAL_HANDLE<float> gh;
-  __shared__ SHARED_HANDLE sh;
-
-  set_handles(gh, space->T.th);
   gh.cost = lap_costs;
 
   while (t < MAX_ITER)
@@ -167,7 +169,7 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
     // __syncthreads();
 
     // Solve the LAP
-    BHA<float>(gh, sh);
+    BHA_fa<float>(gh, sh, row_fa, col_fa);
 
     get_objective_block(gh);
 
@@ -190,10 +192,10 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
 
     if (threadIdx.x == 0)
     {
-      DLog(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %.3f, Infeasibility: %.3f\n", t, LB[t], UB, lrate, feas);
+      // DLog(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %.3f, Infeasibility: %.3f\n", t, LB[t], UB, lrate, feas);
       if ((t > 0 && t < 5 && LB[t] < LB[t - 1]) || LB[t] < 0)
       {
-        DLog(debug, "Initial Step size too large, restart with smaller step size\n");
+        // DLog(debug, "Initial Step size too large, restart with smaller step size\n");
         lrate /= 2;
         t = 0;
         restart = true;
@@ -208,17 +210,23 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
     if (terminate)
       break;
   }
-
+  __syncthreads();
   // Use cub to take the max of the LB array
-  get_LB(LB, space->max_LB[0]);
+  get_LB(LB, space->max_LB[blockIdx.x]);
 
-  if (threadIdx.x == 0)
-  {
-    DLog(info, "Max LB: %.3f\n", space->max_LB[0]);
-    DLog(info, "Subgrad Solver Gap: %.3f%%\n", (UB - space->max_LB[0]) * 100 / UB);
-  }
+  // if (threadIdx.x == 0)
+  // {
+  // DLog(debug, "Block %u finished subgrad solver with LB: %.3f\n", blockIdx.x, space->max_LB[blockIdx.x]);
+  //   DLog(info, "Max LB: %.3f\n", space->max_LB[blockIdx.x]);
+  //   DLog(info, "Subgrad Solver Gap: %.3f%%\n", (UB - space->max_LB[blockIdx.x]) * 100 / UB);
+  // }
+  __syncthreads();
 }
+
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)
 {
-  subgrad_solver_block(pinfo, space, UB);
+  GLOBAL_HANDLE<float> gh;
+  SHARED_HANDLE sh;
+  set_handles(gh, space->T.th);
+  subgrad_solver_block(pinfo, space, UB, nullptr, nullptr, gh, sh);
 }

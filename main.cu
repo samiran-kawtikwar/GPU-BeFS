@@ -67,9 +67,12 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->budgets, ncommodities * sizeof(weight_type)));
   CUDA_RUNTIME(cudaMemcpy(d_problem_info->budgets, h_problem_info->budgets, ncommodities * sizeof(weight_type), cudaMemcpyHostToDevice));
 
+  Timer t = Timer();
   // Solve RCAP
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
+  // print time
+  Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
 
   // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
@@ -78,7 +81,7 @@ int main(int argc, char **argv)
   heap_overflow.store(false, cuda::memory_order_release);
 
   Log(debug, "Solving RCAP with Branching");
-  Timer t = Timer();
+  t.reset();
 
   // Create space for queue
   size_t queue_size = psize + 1; // To be changed later -- equals grid dimension of request manager

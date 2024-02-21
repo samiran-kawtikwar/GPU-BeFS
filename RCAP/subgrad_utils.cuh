@@ -107,7 +107,7 @@ __device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,
 
 __device__ __forceinline__ void update_mult(float *mult, float *g, const float lrate,
                                             float &denom, const float LB,
-                                            const float UB, const uint K)
+                                            const float &UB, const uint K)
 {
   for (int k = threadIdx.x; k < K; k += blockDim.x)
   {
@@ -136,15 +136,16 @@ __device__ __forceinline__ void check_feasibility(const problem_info *pinfo, GLO
   {
     if (feas < eps)
     {
-      DLog(debug, "Found feasible solution!\n");
+      // DLog(debug, "Found feasible solution!\n");
+      // Solution need not be optimal
+      // TODO: Update UB and save this solution
+
       float obj = 0;
       for (uint r = 0; r < SIZE; r++)
       {
         int c = gh.column_of_star_at_row[r];
         obj += pinfo->costs[c * SIZE + r];
       }
-      // Solution need not be optimal
-      // TODO: Update UB and save this solution
       terminate = true;
     }
   }

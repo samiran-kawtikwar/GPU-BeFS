@@ -5,6 +5,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
+#include "subgrad_solver.cuh"
 
 __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node *a, int *col_fa,
                                            float *lap_costs, bnb_stats *stats, bool &feasible,
@@ -59,6 +60,7 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
   __syncthreads();
 }
 
+// Simple bounds based on fixed assignments
 __device__ __forceinline__ void update_bounds(const problem_info *pinfo, const node *a)
 {
   const uint psize = pinfo->psize;
@@ -67,5 +69,26 @@ __device__ __forceinline__ void update_bounds(const problem_info *pinfo, const n
     if (a[0].value->fixed_assignments[i] != 0)
       atomicAdd(&a[0].value->LB, pinfo->costs[i * psize + (a[0].value->fixed_assignments[i] - 1)]);
   }
+  __syncthreads();
+}
+
+__device__ void update_bounds_subgrad(const problem_info *pinfo, subgrad_space *space,
+                                      float &UB, node *a, int *col_fa,
+                                      GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
+{
+  int *row_fa = a[0].value->fixed_assignments;
+  // Update UB using the current fixed assignments
+  for (int i = threadIdx.x; i < SIZE; i += blockDim.x)
+  {
+    if (row_fa[i] != 0)
+    {
+      atomicAdd(&UB, (float)pinfo->costs[i * SIZE + (row_fa[i] - 1)]);
+    }
+  }
+  __syncthreads();
+
+  subgrad_solver_block(pinfo, space, UB, row_fa, col_fa, gh, sh);
+  __syncthreads();
+  a[0].value->LB = space->max_LB[blockIdx.x];
   __syncthreads();
 }

@@ -74,7 +74,7 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
           budgets[k] = std::max((weight_type)1, budgets[k] - 1);
       }
     } while (UB <= LAP_obj);
-    model.write("scratch/model.lp");
+    // model.write("scratch/model.lp");
 
     delete[] x;
     return UB;
