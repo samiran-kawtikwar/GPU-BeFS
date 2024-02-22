@@ -1,14 +1,12 @@
 #pragma once
 #include "queue/queue.cuh"
+#include "LAP/Hung_lap.cuh"
 
-#define __DEBUG__
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
-#define MAX_DATA 0xffffffff
-#define eps 1e-6
+#define MAX_ITER 100
 
 const uint N_RECEPIENTS = 1; // Don't change
-typedef unsigned long long int uint64;
 typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
@@ -29,7 +27,7 @@ enum ExitCode
   UNKNOWN_ERROR
 };
 
-__forceinline__ __device__ const char *
+__device__ __forceinline__ const char *
 getTextForEnum(int enumVal)
 {
   return (const char *[]){
@@ -56,6 +54,7 @@ const char *enum_to_str(TaskType type)
 
 struct problem_info
 {
+  uint psize, ncommodities;
   cost_type *costs;     // cost of assigning
   weight_type *weights; // weight of each commodity
   weight_type *budgets; // capacity of each commodity
@@ -63,11 +62,10 @@ struct problem_info
 
 struct node_info
 {
-  int fixed_assignments[100]; // To be changed later using appropriate partitions
+  int *fixed_assignments;
   float LB;
   uint level;
   uint id; // For mapping with memory queue; DON'T UPDATE
-  __host__ __device__ node_info() { std::fill(fixed_assignments, fixed_assignments + 100, -1); };
 };
 
 struct node
@@ -86,6 +84,45 @@ struct d_instruction
   __host__ __device__ d_instruction(TaskType req_type, size_t req_len, node *nodes) { type = req_type, num_values = req_len, values = nodes; };
 };
 
+struct subgrad_space
+{
+  float *mult, *g, *lap_costs, *LB, *real_obj, *max_LB;
+  int *X;
+  TLAP<float> T;
+  __host__ void allocate(uint N, uint K, uint nworkers = 0, uint devID = 0)
+  {
+    nworkers = (nworkers == 0) ? N : nworkers;
+    // allocate space for mult, g, lap_costs, LB, LB_old, X, and th
+    CUDA_RUNTIME(cudaMalloc((void **)&mult, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&g, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&lap_costs, nworkers * N * N * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&X, nworkers * N * N * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&LB, nworkers * MAX_ITER * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&max_LB, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&real_obj, nworkers * sizeof(float)));
+
+    CUDA_RUNTIME(cudaMemset(mult, 0, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(g, 0, nworkers * K * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(lap_costs, 0, nworkers * N * N * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(X, 0, nworkers * N * N * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(LB, 0, nworkers * MAX_ITER * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(max_LB, 0, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
+
+    Log(debug, "Allocating space for %u LAPs", nworkers);
+    T = TLAP<float>(nworkers, N, devID);
+    T.allocate(nworkers, N, devID);
+  };
+  __host__ void clear()
+  {
+    CUDA_RUNTIME(cudaFree(mult));
+    CUDA_RUNTIME(cudaFree(g));
+    CUDA_RUNTIME(cudaFree(lap_costs));
+    CUDA_RUNTIME(cudaFree(X));
+    // T.th.clear();  -- will be called in the destructor of TLAP since it is declared in stack
+  }
+};
+
 struct queue_info
 {
   TaskType type;
@@ -99,10 +136,18 @@ struct work_info
 {
   uint batch_size;
   node nodes[100];
+  int col_fixed_assignments[100];
 };
 
 struct bnb_stats
 {
   uint nodes_explored;
-  uint nodes_pruned;
+  uint nodes_pruned_incumbent;
+  uint nodes_pruned_infeasible;
+  void initialize()
+  {
+    nodes_explored = 1; // for root node
+    nodes_pruned_incumbent = 0;
+    nodes_pruned_infeasible = 0;
+  }
 };

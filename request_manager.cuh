@@ -7,8 +7,8 @@
 #include "utils/logger.cuh"
 #include "heap/bheap.cuh"
 
-__device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached = false;
-__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow = false;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;
 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
@@ -85,7 +85,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             {
               if (threadIdx.x == 0)
               {
-                DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
+                // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
                 invalid_count++;
                 // send the pop request back to the queue
@@ -323,4 +323,43 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
     process_requests<NODE>(INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, heap, queue_space);
   else
     generate_requests<NODE>(ins_list, INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, queue_space);
+}
+
+__device__ void wait_for_pop(queue_info *queue_space)
+{
+  uint ns = 8;
+  // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
+  // if (threadIdx.x == 0)
+  // {
+  //   pop_reset = true;
+  // }
+  // __syncthreads();
+  do
+  {
+    if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+    {
+      // if (threadIdx.x == 0)
+      // {
+      //   printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
+      // }
+      // __syncthreads();
+      break;
+    }
+    __syncthreads();
+    // optimality reached while a block is waiting for a pop
+    // if (threadIdx.x == 0 && pop_reset)
+    // {
+    //   pop_reset = false;
+    // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
+    // }
+    // __syncthreads();
+    if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+    {
+      if (threadIdx.x == 0)
+        DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
+      __syncthreads();
+      return;
+    }
+  } while (ns = my_sleep(ns));
+  __syncthreads();
 }

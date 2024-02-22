@@ -167,5 +167,51 @@ problem_info *generate_problem(Config config, int seed = 45345)
   info->costs = generate_cost<T>(config, seed);
   info->weights = generate_weights<T>(config, seed);
   info->budgets = get_budgets<T>(info->weights, config);
+  info->psize = config.user_n;
+  info->ncommodities = config.user_ncommodities;
   return info;
+}
+
+void print(problem_info *info, bool costs = true, bool weights = false, bool budgets = false)
+{
+  uint psize = info->psize;
+  uint ncommodities = info->ncommodities;
+  if (costs)
+  {
+    Log(debug, "Costs: ");
+    for (size_t i = 0; i < psize; i++)
+    {
+      for (size_t j = 0; j < psize; j++)
+      {
+        printf("%u, ", info->costs[i * psize + j]);
+      }
+      printf("\n");
+    }
+  }
+  if (weights)
+  {
+    Log(debug, "Weights: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("Commodity: %lu\n", k);
+      for (size_t i = 0; i < psize; i++)
+      {
+        for (size_t j = 0; j < psize; j++)
+        {
+          printf("%u, ", info->weights[k * psize * psize + i * psize + j]);
+        }
+        printf("\n");
+      }
+      printf("\n");
+    }
+  }
+  if (budgets)
+  {
+    Log(debug, "Budgets: ");
+    for (size_t k = 0; k < ncommodities; k++)
+    {
+      printf("%u, ", info->budgets[k]);
+    }
+    printf("\n");
+  }
 }
