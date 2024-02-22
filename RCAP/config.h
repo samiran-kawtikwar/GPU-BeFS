@@ -7,7 +7,7 @@ typedef unsigned int uint;
 
 struct Config
 {
-  uint user_n;
+  uint user_n, user_ncommodities;
   double frac;
   int deviceId;
   int seed;
@@ -41,7 +41,7 @@ static Config parseArgs(int argc, char **argv)
   config.seed = 45345;
 
   int opt;
-  while ((opt = getopt(argc, argv, "n:f:d:s:h:")) >= 0)
+  while ((opt = getopt(argc, argv, "n:f:d:s:h:k:")) >= 0)
   {
     switch (opt)
     {
@@ -50,11 +50,15 @@ static Config parseArgs(int argc, char **argv)
       break;
     case 'f':
       config.frac = std::stod(optarg);
+      break;
     case 'd':
       config.deviceId = atoi(optarg);
       break;
     case 's':
       config.seed = atoi(optarg);
+      break;
+    case 'k':
+      config.user_ncommodities = atoi(optarg);
       break;
     case 'h':
       usage();

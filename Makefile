@@ -1,72 +1,50 @@
 NVCC ?= nvcc
-TARGET_EXEC ?= a.out
+GCC ?= g++
 
-# EXEDIR=../test_execs
-BUILD_DIR ?=./build
-OBJ_DIR ?=$(BUILD_DIR)/o
-EXE_DIR ?= $(BUILD_DIR)/exe
-
-SRC_DIRS ?= $(shell find . -type d -not -path "./scratch*" -not -path "./.git*" -not -path "./build*")
-
-SRCS := $(shell find $(SRC_DIRS) -maxdepth 1 -name *.cpp -or -name *.c -or -name *.s -or -name *.cu)
-OBJS := $(SRCS:%=$(BUILD_DIR)/obj/%.o)
-EXES := $(SRCS:%=$(BUILD_DIR)/exe/%.exe)
-DEBUG_OBJS := $(SRCS:%=$(BUILD_DIR)/debug_objs/%.o)
-DEBUG_EXES := $(SRCS:%=$(BUILD_DIR)/debug_exes/%.exe)
-DEPS := $(OBJS:.o=.d)
 ARCH := $(shell ~/get_SM.sh)
+BUILD_DIR ?=./build
 
+# Find all source files
+EXCLUDED_DIRS := scratch build scripts tests logs  # Add the directories you want to exclude here
+CU_FILES := $(shell find . -name '*.cu' $(addprefix -not -path "./", $(addsuffix "/*", $(EXCLUDED_DIRS))))
+CPP_FILES := $(shell find . -name '*.cpp' $(addprefix -not -path "./", $(addsuffix "/*", $(EXCLUDED_DIRS))))
 
-INCL_DIRS := #./include $(FREESTAND_DIR)/include 
-INC_FLAGS := $(addprefix -I,$(INCL_DIRS))
+# Define object files for both cu and cpp
+CU_OBJ_FILES := $(patsubst %.cu,$(BUILD_DIR)/obj/%.cu.o,$(notdir $(CU_FILES)))
+CPP_OBJ_FILES := $(patsubst %.cpp,$(BUILD_DIR)/obj/%.cpp.o,$(CPP_FILES))
 
-LDFLAGS := -lcuda -lgomp
-CPPFLAGS ?= $(INC_FLAGS) -std=c++11 -O3
-CUDAFLAGS ?= $(INC_FLAGS) -g -Xcompiler -fopenmp -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
+# cuda flags
+CUDAFLAGS ?= -g -Xcompiler -fopenmp -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
 						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
-CUDADEBUGFLAGS ?= $(INC_FLAGS) -g -G -Xcompiler -fopenmp -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) 
-						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
-						
-NVCCOPTIONS ?=
+CUDAINC	?=
 
-all: objs release_exes
-dbg: debug_objs debug_exes
+CPPFLAGS ?= -O3
+CPPINC ?= -I${GUROBI_HOME}/include
 
-objs: $(OBJS)
-debug_objs: $(DEBUG_OBJS)
+LDIR ?= -L${GUROBI_HOME}/lib
+LDFLAGS ?= -lcuda -lgomp -lgurobi_c++ -lgurobi100
 
-release_exes: $(EXES)
-debug_exes: $(DEBUG_EXES)
+all: $(BUILD_DIR)/main.exe
 
-#Assemblies
+$(BUILD_DIR)/main.exe: $(CU_OBJ_FILES) $(CPP_OBJ_FILES)
+	$(NVCC) -o $@ $(CU_OBJ_FILES) $(CPP_OBJ_FILES) $(LDIR) $(LDFLAGS)
 
-$(BUILD_DIR)/exe/%.exe: $(BUILD_DIR)/obj/%.o
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $< -o $@ $(LDFLAGS)
-
-$(BUILD_DIR)/debug_exes/%.exe: $(BUILD_DIR)/debug_objs/%.o
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $< -o $@ $(LDFLAGS)
+# Pattern rule for cu files
+$(BUILD_DIR)/obj/%.cu.o: %.cu
+	mkdir -p $(BUILD_DIR)/obj/
+	@echo cu obj files are: $(CU_OBJ_FILES)
+	@echo cu files are: $(CU_FILES)
+	$(NVCC) $(CUDAFLAGS) $(CUDAINC) -c $< -o $@
 
 
-# cuda source
+# Pattern rule for cpp files
+$(BUILD_DIR)/obj/%.cpp.o: %.cpp
+	@mkdir -p $(BUILD_DIR)/obj/$(dir $<) 
+	@echo cpp obj files are: $(CPP_OBJ_FILES)
+	@echo cpp files are: $(CPP_FILES)
+	$(GCC) $(CPPFLAGS) $(CPPINC) -c $< -o $@
 
-$(OBJS): $(SRCS)
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $(CUDAFLAGS) -c $< -o $@
-
-#cuda debug source
-
-$(BUILD_DIR)/debug_objs/%.cu.o: %.cu
-	$(MKDIR_P) $(dir $@)
-	$(NVCC) $(CUDADEBUGFLAGS) -c $< -o $@
-
-.PHONY: clean
 
 clean:
 	$(RM) -r $(BUILD_DIR)
 	@echo SM_VALUE IS $(ARCH)
--include $(DEPS)
-
-
-MKDIR_P ?= mkdir -p

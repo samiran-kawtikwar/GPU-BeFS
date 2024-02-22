@@ -9,12 +9,14 @@
 #include "request_manager.cuh"
 #include "memory_manager.cuh"
 #include "defs.cuh"
-#include "LAP/config.h"
-#include "LAP/cost_generator.h"
 #include "LAP/device_utils.cuh"
 #include "LAP/Hung_lap.cuh"
 #include "LAP/lap_kernels.cuh"
 #include "branch.cuh"
+
+#include "RCAP/config.h"
+#include "RCAP/cost_generator.h"
+#include "RCAP/gurobi_solver.h"
 
 __global__ void get_exit_code(ExitCode *ec)
 {
@@ -31,6 +33,7 @@ int main(int argc, char **argv)
   printConfig(config);
   int dev_ = config.deviceId;
   uint psize = config.user_n;
+  uint ncommodities = config.user_ncommodities;
   if (psize > 100)
   {
     Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 100");
@@ -38,30 +41,59 @@ int main(int argc, char **argv)
   }
   CUDA_RUNTIME(cudaDeviceReset());
   CUDA_RUNTIME(cudaSetDevice(dev_));
+  problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
 
-  cost_type *h_costs = generate_cost<cost_type>(config, config.seed);
+  Log(info, "Costs: ");
+  for (size_t i = 0; i < psize; i++)
+  {
+    for (size_t j = 0; j < psize; j++)
+    {
+      printf("%u, ", h_problem_info->costs[i * psize + j]);
+    }
+    printf("\n");
+  }
 
-  // print h_costs
-  // for (size_t i = 0; i < psize; i++)
-  // {
-  //   for (size_t j = 0; j < psize; j++)
-  //   {
-  //     printf("%u, ", h_costs[i * psize + j]);
-  //   }
-  //   printf("\n");
-  // }
-  cost_type *d_costs;
+  Log(info, "Weights: ");
+  for (size_t k = 0; k < ncommodities; k++)
+  {
+    printf("Commodity: %lu\n", k);
+    for (size_t i = 0; i < psize; i++)
+    {
+      for (size_t j = 0; j < psize; j++)
+      {
+        printf("%u, ", h_problem_info->weights[k * psize * psize + i * psize + j]);
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
 
-  CUDA_RUNTIME(cudaMalloc((void **)&d_costs, psize * psize * sizeof(cost_type)));
-  CUDA_RUNTIME(cudaMemcpy(d_costs, h_costs, psize * psize * sizeof(cost_type), cudaMemcpyHostToDevice));
+  Log(info, "Budgets: ");
+  for (size_t k = 0; k < ncommodities; k++)
+  {
+    printf("%u, ", h_problem_info->budgets[k]);
+  }
+  printf("\n");
 
-  LAP<cost_type> *lap = new LAP<cost_type>(h_costs, psize, dev_);
-  lap->solve();
-  const cost_type UB = lap->objective;
+  // Copy problem info to device
+  problem_info *d_problem_info;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_problem_info, sizeof(problem_info)));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->costs, psize * psize * sizeof(cost_type)));
+  CUDA_RUNTIME(cudaMemcpy(d_problem_info->costs, h_problem_info->costs, psize * psize * sizeof(cost_type), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type)));
+  CUDA_RUNTIME(cudaMemcpy(d_problem_info->weights, h_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->budgets, ncommodities * sizeof(weight_type)));
+  CUDA_RUNTIME(cudaMemcpy(d_problem_info->budgets, h_problem_info->budgets, ncommodities * sizeof(weight_type), cudaMemcpyHostToDevice));
 
-  Log(info, "LAP solved succesfully, objective %u\n", (uint)UB);
-  lap->print_solution();
-  delete lap;
+  cost_type *d_costs = d_problem_info->costs;
+
+  // Solve RCAP
+  const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+
+  Log(info, "RCAP solved succesfully, objective %u\n", (uint)UB);
+  printf("Exiting...\n");
+  exit(0);
+  // lap->print_solution();
   Log(debug, "Solving LAP with Branching");
   Timer t = Timer();
 
@@ -179,7 +211,10 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_address_space));
   CUDA_RUNTIME(cudaFree(d_work_space));
   CUDA_RUNTIME(cudaFree(stats));
-  CUDA_RUNTIME(cudaFree(d_costs));
+  CUDA_RUNTIME(cudaFree(d_problem_info->costs));
+  CUDA_RUNTIME(cudaFree(d_problem_info->weights));
+  CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
+  CUDA_RUNTIME(cudaFree(d_problem_info));
 
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
