@@ -16,6 +16,11 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
     GRBEnv env = GRBEnv();
     env.set(GRB_IntParam_OutputFlag, 0);
     GRBModel model = GRBModel(env);
+    model.set("Presolve", "0");
+    model.set("Cuts", "0");
+    model.set("Threads", "1");
+    model.set("Method", "0");
+    model.set("NodeMethod", "0");
 
     // Create variables
     GRBVar *x = new GRBVar[N * N];
@@ -66,6 +71,10 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
       model.update();
       model.optimize();
       UB = (cost_type)model.getObjective().getValue();
+      uint explored_count = uint(model.get(GRB_DoubleAttr_NodeCount));
+
+      Log(info, "RCAP solved with objective: %u, Explored: %u", UB, explored_count);
+
       if (UB <= LAP_obj)
       {
         // Reduce the budgets

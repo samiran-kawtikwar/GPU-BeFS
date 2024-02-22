@@ -27,6 +27,7 @@ static void usage()
 static void printConfig(Config config)
 {
   printf("  size: %u\n", config.user_n);
+  printf("  ncommodities: %u\n", config.user_ncommodities);
   printf("  frac: %f\n", config.frac);
   printf("  Device: %u\n", config.deviceId);
   printf("  seed value: %d\n", config.seed);
