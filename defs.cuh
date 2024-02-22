@@ -88,6 +88,7 @@ struct subgrad_space
 {
   float *mult, *g, *lap_costs, *LB, *real_obj, *max_LB;
   int *X;
+  int *col_fixed_assignments;
   TLAP<float> T;
   __host__ void allocate(uint N, uint K, uint nworkers = 0, uint devID = 0)
   {
@@ -100,6 +101,7 @@ struct subgrad_space
     CUDA_RUNTIME(cudaMalloc((void **)&LB, nworkers * MAX_ITER * sizeof(float)));
     CUDA_RUNTIME(cudaMalloc((void **)&max_LB, nworkers * sizeof(float)));
     CUDA_RUNTIME(cudaMalloc((void **)&real_obj, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMalloc((void **)&col_fixed_assignments, nworkers * N * sizeof(int)));
 
     CUDA_RUNTIME(cudaMemset(mult, 0, nworkers * K * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(g, 0, nworkers * K * sizeof(float)));
@@ -108,6 +110,7 @@ struct subgrad_space
     CUDA_RUNTIME(cudaMemset(LB, 0, nworkers * MAX_ITER * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(max_LB, 0, nworkers * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
+    CUDA_RUNTIME(cudaMemset(col_fixed_assignments, 0, nworkers * N * sizeof(int)));
 
     Log(debug, "Allocating space for %u LAPs", nworkers);
     T = TLAP<float>(nworkers, N, devID);
@@ -118,7 +121,11 @@ struct subgrad_space
     CUDA_RUNTIME(cudaFree(mult));
     CUDA_RUNTIME(cudaFree(g));
     CUDA_RUNTIME(cudaFree(lap_costs));
+    CUDA_RUNTIME(cudaFree(LB));
+    CUDA_RUNTIME(cudaFree(real_obj));
+    CUDA_RUNTIME(cudaFree(max_LB));
     CUDA_RUNTIME(cudaFree(X));
+    CUDA_RUNTIME(cudaFree(col_fixed_assignments));
     // T.th.clear();  -- will be called in the destructor of TLAP since it is declared in stack
   }
 };
@@ -136,7 +143,6 @@ struct work_info
 {
   uint batch_size;
   node nodes[100];
-  int col_fixed_assignments[100];
 };
 
 struct bnb_stats
