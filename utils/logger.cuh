@@ -4,6 +4,17 @@
 #include <string>
 #define __DEBUG__
 
+namespace logger
+{
+  __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
+  {
+    __nanosleep(ns);
+    if (ns < (1 << 20))
+      ns <<= 1;
+    return ns;
+  }
+}
+
 const char newline[] = "\n";
 const char comma[] = ", ";
 const char colon[] = ": ";
@@ -20,7 +31,7 @@ enum LogPriorityEnum
 };
 
 template <const char *END = newline, typename... Args>
-void Log(LogPriorityEnum l, const char *f, Args... args)
+__host__ __forceinline__ void Log(LogPriorityEnum l, const char *f, Args... args)
 {
 
   bool print = true;
@@ -71,14 +82,50 @@ void Log(LogPriorityEnum l, const char *f, Args... args)
   }
 }
 
-// #define Log(l_, f_, ...)printf((f_), __VA_ARGS__);
+template <typename... Args>
+__device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... args)
+{
 
-template <typename data = int>
-void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
+  bool print = true;
+  static int logging_flag = int(false);
+#ifndef __DEBUG__
+  if (l == debug)
+  {
+    print = false;
+  }
+#endif // __DEBUG__
+
+  if (print)
+  {
+    uint ns = 8;
+    do
+    {
+      if (atomicCAS(&logging_flag, int(false), int(true)) == int(false))
+      {
+
+        // Line Color Set
+        const char *prefix = (l == debug)                    ? "\033[1;34m" // blue
+                             : (l == info)                   ? "\033[1;32m" // green
+                             : (l == warn)                   ? "\033[1;33m" // brown
+                             : (l == error || l == critical) ? "\033[1;31m" // red
+                                                             : "\033[0m";   // default
+
+        printf(prefix);
+        printf(f, args...);
+        printf("\033[0m");
+        atomicCAS(&logging_flag, int(true), int(false));
+        break;
+      }
+    } while (ns = logger::my_sleep(ns));
+  }
+}
+
+template <typename cost_type = int>
+void printDeviceArray(const cost_type *d_array, size_t len, std::string name = NULL)
 {
 
   using namespace std;
-  data *temp = new data[len];
+  cost_type *temp = new cost_type[len];
 
   if (name != "NULL")
   {
@@ -89,7 +136,7 @@ void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
   }
   if (len >= 1)
   {
-    CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(data), cudaMemcpyDefault));
+    CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(cost_type), cudaMemcpyDefault));
     for (size_t i = 0; i < len - 1; i++)
     {
       cout << temp[i] << ',';
@@ -99,12 +146,12 @@ void printDeviceArray(const data *d_array, size_t len, std::string name = NULL)
   delete[] temp;
 }
 
-template <typename data = uint>
-void printDeviceMatrix(const data *array, size_t nrows, size_t ncols, std::string name = NULL)
+template <typename cost_type = uint>
+void printDeviceMatrix(const cost_type *array, size_t nrows, size_t ncols, std::string name = NULL)
 {
   using namespace std;
-  data *temp = new data[nrows * ncols];
-  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(data), cudaMemcpyDefault));
+  cost_type *temp = new cost_type[nrows * ncols];
+  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(cost_type), cudaMemcpyDefault));
 
   if (name != "NULL")
   {
@@ -112,7 +159,7 @@ void printDeviceMatrix(const data *array, size_t nrows, size_t ncols, std::strin
   }
   for (size_t j = 0; j < nrows; j++)
   {
-    data *temp2 = &temp[j * ncols];
+    cost_type *temp2 = &temp[j * ncols];
     for (size_t i = 0; i < ncols - 1; i++)
     {
       cout << temp2[i] << ", ";

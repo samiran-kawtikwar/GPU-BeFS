@@ -1,19 +1,42 @@
 #pragma once
 
 #include "../utils/logger.cuh"
+#include "../utils/cuda_utils.cuh"
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
-
-__device__ uint count = 0;
 
 template <typename NODE>
 class BHEAP
 {
 public:
   NODE *d_heap;
-  size_t *d_size;
+  size_t *d_size, *d_max_size, *d_size_limit;
+  // Constructors
+  __host__ BHEAP(size_t size_limit, int device_id = 0)
+  {
+    CUDA_RUNTIME(cudaSetDevice(device_id));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_heap, sizeof(NODE) * size_limit));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_size, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_max_size, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_size_limit, sizeof(size_t)));
+
+    CUDA_RUNTIME(cudaMemset(d_size, 0, sizeof(size_t)));
+    d_max_size[0] = 0;
+    d_size_limit[0] = size_limit;
+  }
+  __device__ BHEAP();
+
+  // Destructors
+  __host__ void free_memory()
+  {
+    CUDA_RUNTIME(cudaFree(d_heap));
+    CUDA_RUNTIME(cudaFree(d_size));
+    CUDA_RUNTIME(cudaFree(d_max_size));
+    CUDA_RUNTIME(cudaFree(d_size_limit));
+  }
+
   void print()
   {
     size_t *h_size = (size_t *)malloc(sizeof(size_t));
@@ -28,13 +51,21 @@ public:
     }
     printf("\n");
   }
+  void print_size()
+  {
+    size_t *h_size = (size_t *)malloc(sizeof(size_t));
+    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
+    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
+    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
+
+    Log(info, "heap size at termination: %lu\n", h_size[0]);
+  }
 };
 
 // Heap operations: push, pop, batch_push
 template <typename NODE>
-__device__ NODE pop(BHEAP<NODE> heap)
+__device__ void pop(BHEAP<NODE> heap, NODE &min)
 {
-  __shared__ NODE min;
   if (threadIdx.x == 0)
   {
     NODE *h = heap.d_heap;
@@ -68,7 +99,6 @@ __device__ NODE pop(BHEAP<NODE> heap)
     heap.d_size[0]--;
   }
   __syncthreads();
-  return min;
 };
 
 template <typename NODE>
@@ -78,7 +108,7 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
   {
     NODE *heap = bheap.d_heap;
     size_t size = bheap.d_size[0];
-    if (size >= MAX_HEAP_SIZE)
+    if (size >= bheap.d_size_limit[0])
     {
       printf("heap overflow!!\n");
       return;
@@ -94,6 +124,8 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
       i = (i - 1) / 2;
     }
     bheap.d_size[0]++;
+    bheap.d_max_size[0] = max(bheap.d_max_size[0], bheap.d_size[0]);
+    // printf("pushed: %f: heap size: %lu\n", new_node.key, bheap.d_size[0]);
   }
   return;
 };

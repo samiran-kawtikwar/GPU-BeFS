@@ -6,10 +6,9 @@ BUILD_DIR ?=./build
 OBJ_DIR ?=$(BUILD_DIR)/o
 EXE_DIR ?= $(BUILD_DIR)/exe
 
-SRC_DIRS ?= .
+SRC_DIRS ?= $(shell find . -type d -not -path "./scratch*" -not -path "./.git*" -not -path "./build*")
 
-SRCS := $(shell find $(SRC_DIRS) -name *.cpp -or -name *.c -or -name *.s -or -name *.cu)
-SRCS_NAMES := $(shell find $(SRC_DIRS) -name *.cpp -or -name *.c -or -name *.s -or -name *.cu -printf "%f\n")
+SRCS := $(shell find $(SRC_DIRS) -maxdepth 1 -name *.cpp -or -name *.c -or -name *.s -or -name *.cu)
 OBJS := $(SRCS:%=$(BUILD_DIR)/obj/%.o)
 EXES := $(SRCS:%=$(BUILD_DIR)/exe/%.exe)
 DEBUG_OBJS := $(SRCS:%=$(BUILD_DIR)/debug_objs/%.o)
@@ -52,7 +51,7 @@ $(BUILD_DIR)/debug_exes/%.exe: $(BUILD_DIR)/debug_objs/%.o
 
 # cuda source
 
-$(BUILD_DIR)/obj/%.cu.o: %.cu
+$(OBJS): $(SRCS)
 	$(MKDIR_P) $(dir $@)
 	$(NVCC) $(CUDAFLAGS) -c $< -o $@
 
