@@ -81,8 +81,10 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   if (blockIdx.x > 0)
   {
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
-    int *col_fa = work_space[blockIdx.x].col_fixed_assignments;
+    // Needed for feasibility check
+    int *col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
     float *lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
+
     __shared__ GLOBAL_HANDLE<float> gh;
     __shared__ SHARED_HANDLE sh;
     __shared__ float UB;
