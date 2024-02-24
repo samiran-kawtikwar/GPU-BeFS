@@ -73,6 +73,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                                const problem_info *pinfo, uint max_node_length,
                                queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
+                               bool *hold_status,
                                const cost_type global_UB,
                                bnb_stats *stats)
 {
@@ -102,9 +103,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       __syncthreads();
 
       // Wait for POP to be done
-      wait_for_pop(queue_space);
-
-      if (opt_reached.load(cuda::memory_order_relaxed))
+      if (wait_for_pop(queue_space) == false)
         break;
 
       // copy from queue space to work space
@@ -220,7 +219,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
   else
   {
     process_requests_bnb(queue_caller(request_queue, tickets, head, tail), request_queue_size,
-                         bheap, queue_space);
+                         bheap, queue_space,
+                         hold_status);
   }
   __syncthreads();
   if (threadIdx.x == 0)

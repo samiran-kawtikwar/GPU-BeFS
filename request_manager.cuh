@@ -9,11 +9,13 @@
 
 __device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;
+__device__ cuda::atomic<bool, cuda::thread_scope_device> heap_underflow; // For infeasibility check
 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                                      uint32_t queue_size,
-                                     BHEAP<NODE> heap, queue_info *queue_space)
+                                     BHEAP<NODE> heap, queue_info *queue_space,
+                                     bool *hold_status)
 {
   __shared__ bool fork;
   __shared__ uint qidx, dequeued_idx, count, invalid_count;
@@ -25,11 +27,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
   }
   __syncthreads();
   while (
-      // count < INS_LEN &&
-      //  head_queue->load(cuda::memory_order_relaxed) != tail_queue->load(cuda::memory_order_relaxed) &&
-      !opt_reached.load(cuda::memory_order_relaxed) && !heap_overflow.load(cuda::memory_order_relaxed)
-      //&& invalid_count < 1
-  )
+      !opt_reached.load(cuda::memory_order_relaxed) &&
+      !heap_overflow.load(cuda::memory_order_relaxed) &&
+      !heap_underflow.load(cuda::memory_order_relaxed))
   {
     // Dequeue here
     if (threadIdx.x == 0)
@@ -87,7 +87,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
               {
                 // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
-                invalid_count++;
+                if (hold_status[dequeued_idx] == false)
+                  invalid_count++;
+                hold_status[dequeued_idx] = true;
                 // send the pop request back to the queue
                 queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
               }
@@ -116,22 +118,24 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
           atomicAdd(&(count), 1);
           if (count % 100000 == 0)
             DLog(debug, "Processed %u requests\n", count);
-          invalid_count = 0;
-
+          if (task_type == POP && hold_status[dequeued_idx] == true)
+          {
+            invalid_count--;
+            hold_status[dequeued_idx] = false;
+          }
           // DLog(debug, "Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
         }
         // __syncthreads();
-        // if (size == 0)
-        // {
-        //   asm("exit;");
-        // }
       }
     }
     __syncthreads();
+    if (threadIdx.x == 0 && invalid_count >= gridDim.x - 1)
+      heap_underflow.store(true, cuda::memory_order_release); // heap empty
   }
   return;
 }
 
+// For testing
 template <typename NODE>
 __device__ void process_requests(uint INS_LEN,
                                  queue_callee(queue, tickets, head, tail),
@@ -325,7 +329,7 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
     generate_requests<NODE>(ins_list, INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, queue_space);
 }
 
-__device__ void wait_for_pop(queue_info *queue_space)
+__device__ bool wait_for_pop(queue_info *queue_space)
 {
   uint ns = 8;
   // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
@@ -353,13 +357,16 @@ __device__ void wait_for_pop(queue_info *queue_space)
     // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
     // }
     // __syncthreads();
-    if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+    if (opt_reached.load(cuda::memory_order_relaxed) ||
+        heap_overflow.load(cuda::memory_order_relaxed) ||
+        heap_underflow.load(cuda::memory_order_relaxed))
     {
-      if (threadIdx.x == 0)
-        DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
+      // if (threadIdx.x == 0)
+      //   DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
       __syncthreads();
-      return;
+      return false;
     }
   } while (ns = my_sleep(ns));
   __syncthreads();
+  return true;
 }

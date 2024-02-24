@@ -22,9 +22,10 @@
 __global__ void get_exit_code(ExitCode *ec)
 {
 
-  ec[0] = opt_reached.load(cuda::memory_order_consume)     ? ExitCode::OPTIMAL
-          : heap_overflow.load(cuda::memory_order_consume) ? ExitCode::HEAP_FULL
-                                                           : ExitCode::UNKNOWN_ERROR;
+  ec[0] = opt_reached.load(cuda::memory_order_consume)      ? ExitCode::OPTIMAL
+          : heap_overflow.load(cuda::memory_order_consume)  ? ExitCode::HEAP_FULL
+          : heap_underflow.load(cuda::memory_order_consume) ? ExitCode::INFEASIBLE
+                                                            : ExitCode::UNKNOWN_ERROR;
 }
 
 __global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assignment_space, const uint size, const uint len)
@@ -69,7 +70,7 @@ int main(int argc, char **argv)
 
   Timer t = Timer();
   // Solve RCAP
-  const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
   // print time
   Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
@@ -79,6 +80,7 @@ int main(int argc, char **argv)
 
   opt_reached.store(false, cuda::memory_order_release);
   heap_overflow.store(false, cuda::memory_order_release);
+  heap_underflow.store(false, cuda::memory_order_release);
 
   Log(debug, "Solving RCAP with Branching");
   t.reset();
@@ -150,6 +152,11 @@ int main(int argc, char **argv)
   execKernel(set_fixed_assignment_pointers, grid_dimension, block_dimension, dev_, true,
              d_node_space, d_fixed_assignment_space, psize, memory_queue_len);
 
+  // create space for hold_status
+  bool *d_hold_status;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, queue_size * sizeof(bool)));
+  CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, queue_size * sizeof(bool)));
+
   // Create BHEAP on device
   BHEAP<node> d_bheap = BHEAP<node>(memory_queue_len, dev_);
 
@@ -185,6 +192,7 @@ int main(int argc, char **argv)
              d_problem_info, max_node_length,
              queue_caller(request_queue, tickets, head, tail), queue_size,
              d_queue_space, d_work_space, d_bheap,
+             d_hold_status,
              UB, stats);
 
   printf("\n");
@@ -213,6 +221,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_problem_info->weights));
   CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
   CUDA_RUNTIME(cudaFree(d_problem_info));
+  CUDA_RUNTIME(cudaFree(d_hold_status));
 
   delete[] h_problem_info->costs;
   delete[] h_problem_info->weights;
@@ -222,5 +231,7 @@ int main(int argc, char **argv)
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
 
+  // print exit code message and return
+  Log(info, "Exit code: %s", ExitCode_text[exit_code]);
   return int(exit_code);
 }
