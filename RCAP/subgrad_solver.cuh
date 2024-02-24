@@ -226,7 +226,7 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)
 {
   GLOBAL_HANDLE<float> gh;
-  SHARED_HANDLE sh;
+  __shared__ SHARED_HANDLE sh;
   set_handles(gh, space->T.th);
   subgrad_solver_block(pinfo, space, UB, nullptr, nullptr, gh, sh);
 }
