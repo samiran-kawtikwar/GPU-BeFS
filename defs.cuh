@@ -27,6 +27,12 @@ enum ExitCode
   UNKNOWN_ERROR
 };
 
+const char *ExitCode_text[] = {
+    "OPTIMAL",
+    "HEAP_FULL",
+    "INFEASIBLE",
+    "UNKNOWN_ERROR"};
+
 __device__ __forceinline__ const char *
 getTextForEnum(int enumVal)
 {
