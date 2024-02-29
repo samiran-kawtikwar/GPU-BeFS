@@ -74,6 +74,7 @@ __device__ __forceinline__ void update_lap_costs(float *lap_costs, const problem
   {
     atomicAdd(&neg, mult[k] * pinfo->budgets[k]);
   }
+  __syncthreads();
 }
 
 __device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,

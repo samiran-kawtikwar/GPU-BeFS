@@ -117,3 +117,23 @@ struct SHARED_HANDLE
   int zeros_size, n_matches;
   bool goto_5, repeat_kernel;
 };
+
+__device__ void print_cost_matrix(float *cost, int n, int m)
+{
+  for (int i = 0; i < n; i++)
+  {
+    for (int j = 0; j < m; j++)
+      printf("%.3f ", cost[i * m + j]);
+    printf("\n");
+  }
+}
+
+__device__ void print_cost_matrix(int *cost, int n, int m)
+{
+  for (int i = 0; i < n; i++)
+  {
+    for (int j = 0; j < m; j++)
+      printf("%d ", cost[i * m + j]);
+    printf("\n");
+  }
+}

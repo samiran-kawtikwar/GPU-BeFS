@@ -135,7 +135,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = (free * 0.50) / memory_queue_weight; // Keeping 50% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // space for node_info
@@ -186,7 +186,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              UB);
 
-  execKernel(branch_n_bound, psize + 1, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, 1 + 1, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
