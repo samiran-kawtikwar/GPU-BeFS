@@ -280,8 +280,8 @@ fundef void block_step_4(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HAN
 }
 
 template <typename data = float, uint blockSize = n_threads_reduction>
-__device__ void block_min_reduce_kernel1(data *g_idata, data *g_odata,
-                                         const size_t n, GLOBAL_HANDLE<data> &gh)
+__device__ void block_min_reduce_kernel1(const data *g_idata, data *g_odata,
+                                         GLOBAL_HANDLE<data> &gh)
 {
   __shared__ data sdata[blockSize];
   const uint tid = threadIdx.x;
@@ -289,7 +289,7 @@ __device__ void block_min_reduce_kernel1(data *g_idata, data *g_odata,
   size_t i = tid;
   // size_t gridSize = (size_t)blockSize * 2;
   sdata[tid] = MAX_DATA;
-  while (i < n)
+  while (i < SIZE * SIZE)
   {
     size_t i1 = i;
     // size_t i2 = i + blockSize;
@@ -299,7 +299,13 @@ __device__ void block_min_reduce_kernel1(data *g_idata, data *g_odata,
     if (gh.cover_row[l1] == 1 || gh.cover_column[c1] == 1)
       g1 = MAX_DATA;
     else
+    {
       g1 = g_idata[i1];
+      if (g1 < 0)
+      {
+        printf("Negative slack in problemID %u, value: %f\n", blockIdx.x, g1);
+      }
+    }
     // if (i2 < n)
     // {
     //   size_t l2 = i2 % nrows;
@@ -458,11 +464,11 @@ fundef void block_get_objective(GLOBAL_HANDLE<data> &gh)
   __syncthreads();
 }
 
-fundef void check_slack(GLOBAL_HANDLE<data> &gh)
+fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
 {
-  __shared__ int raise_error;
+  __shared__ bool raise_error;
   if (threadIdx.x == 0)
-    raise_error = (int)false;
+    raise_error = false;
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
@@ -470,14 +476,12 @@ fundef void check_slack(GLOBAL_HANDLE<data> &gh)
     if (gh.slack[i] < 0)
     {
       raise_error = true;
-      atomicCAS((int *)&raise_error, (int)false, (int)true);
-      break;
     }
   }
   __syncthreads();
   if (threadIdx.x == 0 && raise_error)
   {
-    printf("Negative slack in problemID %u\n", blockIdx.x);
+    printf("Negative slack in problemID %u at %s:%u\n", blockIdx.x, filename, line);
 
     printf("Cost\n");
     print_cost_matrix(gh.cost, SIZE, SIZE);
@@ -493,6 +497,8 @@ fundef void check_slack(GLOBAL_HANDLE<data> &gh)
 
     assert(false);
   }
+  __syncthreads();
+  return;
 }
 
 // #define MY_PRINT
@@ -507,7 +513,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
   block_row_sub(gh, sh);
   __syncthreads();
 
-  check_slack(gh);
+  check_slack(gh, __FILE__, __LINE__);
   __syncthreads();
 
   block_calc_col_min(gh);
@@ -515,7 +521,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
   block_col_sub(gh);
   __syncthreads();
 
-  check_slack(gh);
+  check_slack(gh, __FILE__, __LINE__);
   __syncthreads();
 
   block_compress_matrix(gh, sh);
@@ -577,10 +583,10 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       // printArray(gh.cover_row, SIZE, "row cover");
       __syncthreads();
 
-      check_slack(gh);
+      check_slack(gh, __FILE__, __LINE__);
       __syncthreads();
 
-      block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, SIZE * SIZE, gh);
+      block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, gh);
       __syncthreads();
 
       if (gh.d_min_in_mat[0] <= eps)
@@ -588,7 +594,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
         __syncthreads();
         if (threadIdx.x == 0)
         {
-          printf("minimum element in problemID %u is non positive: %f\n", problemID, (float)gh.d_min_in_mat[0]);
+          printf("minimum element in problemID %u is non positive: %.3f\n", problemID, (float)gh.d_min_in_mat[0]);
           printf("Cost\n");
           print_cost_matrix(gh.cost, SIZE, SIZE);
 
@@ -607,6 +613,10 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
         return;
       }
       __syncthreads();
+
+      check_slack(gh, __FILE__, __LINE__);
+      __syncthreads();
+
       block_step_6_init(gh, sh); // Also does dual update
       __syncthreads();
       // printArray(gh.d_min_in_mat, 1, "min ");
@@ -614,7 +624,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       block_step_6_add_sub_fused_compress_matrix(gh, sh);
       __syncthreads();
 
-      check_slack(gh);
+      check_slack(gh, __FILE__, __LINE__);
       __syncthreads();
     }
     __syncthreads();
@@ -696,19 +706,22 @@ fundef void set_handles(GLOBAL_HANDLE<data> &gh, TILED_HANDLE<data> &th)
   {
     gh.slack = &th.slack[blockIdx.x * SIZE * SIZE];
     gh.column_of_star_at_row = &th.column_of_star_at_row[blockIdx.x * nrows];
-    gh.objective = &th.objective[blockIdx.x];
-    gh.objective[0] = 0;
-    gh.min_in_rows = &th.min_in_rows[blockIdx.x * SIZE];
-    gh.min_in_cols = &th.min_in_cols[blockIdx.x * SIZE];
-    gh.row_of_star_at_column = &th.row_of_star_at_column[blockIdx.x * ncols];
+
     gh.zeros = &th.zeros[blockIdx.x * SIZE * SIZE];
     gh.zeros_size_b = &th.zeros_size_b[blockIdx.x * NB4];
+
     gh.cover_row = &th.cover_row[blockIdx.x * SIZE];
     gh.cover_column = &th.cover_column[blockIdx.x * SIZE];
     gh.column_of_prime_at_row = &th.column_of_prime_at_row[blockIdx.x * SIZE];
     gh.row_of_green_at_column = &th.row_of_green_at_column[blockIdx.x * SIZE];
+
     gh.d_min_in_mat_vect = &th.d_min_in_mat_vect[blockIdx.x * NBR];
     gh.d_min_in_mat = &th.d_min_in_mat[blockIdx.x];
+    gh.min_in_rows = &th.min_in_rows[blockIdx.x * SIZE];
+    gh.min_in_cols = &th.min_in_cols[blockIdx.x * SIZE];
+    gh.row_of_star_at_column = &th.row_of_star_at_column[blockIdx.x * ncols];
+    gh.objective = &th.objective[blockIdx.x];
+    gh.objective[0] = 0;
   }
   __syncthreads();
 }

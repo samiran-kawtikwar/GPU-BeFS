@@ -46,12 +46,12 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
                            uint *dequeued_idx)
 {
   __shared__ bool fork;
-  __shared__ uint qidx, count;
+  __shared__ uint qidx, sh_count;
   // try dequeue
   if (threadIdx.x == 0)
-    count = 0;
+    sh_count = 0;
   __syncthreads();
-  while (count < n_tokens && !heap_overflow.load(cuda::memory_order_relaxed))
+  while (sh_count < n_tokens && !heap_overflow.load(cuda::memory_order_relaxed))
   {
     if (threadIdx.x == 0)
     {
@@ -67,7 +67,7 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
         {
           queue_wait_ticket(queue, tickets, head, tail, queue_size, qidx, dequeued_idx[iter]);
           qidx++;
-          count++;
+          sh_count++;
         }
       }
       else

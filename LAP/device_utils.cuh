@@ -1,7 +1,7 @@
 #pragma once
 #include "../utils/cuda_utils.cuh"
 
-#define MAX_DATA 1e6
+#define MAX_DATA float(1e6)
 typedef unsigned long long int uint64;
 #define eps 1e-6
 #define __DEBUG__D true
@@ -43,7 +43,7 @@ struct GLOBAL_HANDLE
   int *cover_row, *cover_column;
   int *column_of_prime_at_row, *row_of_green_at_column;
 
-  cost_type *max_in_mat_row, *max_in_mat_col, *d_min_in_mat_vect, *d_min_in_mat;
+  cost_type *d_min_in_mat_vect, *d_min_in_mat;
   int row_mask;
   uint nb4;
 
@@ -82,19 +82,17 @@ struct TILED_HANDLE
   int *column_of_prime_at_row, *row_of_green_at_column;
   // uint *tail; // Only difference between TILED and GLOBAL //Not needed
 
-  data *max_in_mat_row, *max_in_mat_col, *d_min_in_mat_vect, *d_min_in_mat;
+  data *d_min_in_mat_vect, *d_min_in_mat;
   int row_mask;
   uint nb4;
 
   void clear()
   {
     // CUDA_RUNTIME(cudaFree(cost));  //Already cleared to save memory
-    if (memoryloc == INTERNAL)
-    {
-      CUDA_RUNTIME(cudaFree(min_in_rows));
-      CUDA_RUNTIME(cudaFree(min_in_cols));
-      CUDA_RUNTIME(cudaFree(row_of_star_at_column));
-    }
+
+    CUDA_RUNTIME(cudaFree(min_in_rows));
+    CUDA_RUNTIME(cudaFree(min_in_cols));
+    CUDA_RUNTIME(cudaFree(row_of_star_at_column));
     CUDA_RUNTIME(cudaFree(slack));
     CUDA_RUNTIME(cudaFree(zeros));
     CUDA_RUNTIME(cudaFree(zeros_size_b));
@@ -103,9 +101,6 @@ struct TILED_HANDLE
     CUDA_RUNTIME(cudaFree(cover_column));
     CUDA_RUNTIME(cudaFree(column_of_prime_at_row));
     CUDA_RUNTIME(cudaFree(row_of_green_at_column));
-
-    CUDA_RUNTIME(cudaFree(max_in_mat_row));
-    CUDA_RUNTIME(cudaFree(max_in_mat_col));
     CUDA_RUNTIME(cudaFree(d_min_in_mat_vect));
     CUDA_RUNTIME(cudaFree(d_min_in_mat));
     // CUDA_RUNTIME(cudaFree(tail));
