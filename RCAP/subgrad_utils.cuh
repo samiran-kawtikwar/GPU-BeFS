@@ -5,7 +5,7 @@
 #include "gurobi_solver.h"
 #include <sstream>
 
-#include "../LAP/Hung_lap.cuh"
+#include "../LAP/Hung_Tlap.cuh"
 
 __device__ __forceinline__ void init(float *mult, float *g, float *LB,
                                      bool &restart, bool &terminate, float &lrate, uint &t,
@@ -93,6 +93,7 @@ __device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,
       real += float(X[i] * pinfo->costs[i]);
     }
     sum = BR(temp_storage).Reduce(sum, cub::Sum());
+    __syncthreads();
     real = BR(temp_storage).Reduce(real, cub::Sum());
     if (threadIdx.x == 0)
     {
