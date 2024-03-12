@@ -1,6 +1,7 @@
 #pragma once
 #include "queue/queue.cuh"
 #include "LAP/Hung_lap.cuh"
+#include "LAP/Hung_Tlap.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
@@ -120,7 +121,7 @@ struct subgrad_space
 
     Log(debug, "Allocating space for %u LAPs", nworkers);
     T = TLAP<float>(nworkers, N, devID);
-    T.allocate(nworkers, N, devID);
+    // T.allocate(nworkers, N, devID);
   };
   __host__ void clear()
   {
@@ -132,7 +133,7 @@ struct subgrad_space
     CUDA_RUNTIME(cudaFree(max_LB));
     CUDA_RUNTIME(cudaFree(X));
     CUDA_RUNTIME(cudaFree(col_fixed_assignments));
-    // T.th.clear();  -- will be called in the destructor of TLAP since it is declared in stack
+    T.th.clear();
   }
 };
 
