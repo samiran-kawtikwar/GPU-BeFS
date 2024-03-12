@@ -8,6 +8,7 @@
 #include "RCAP/rcap_kernels.cuh"
 
 #include "LAP/Hung_lap.cuh"
+#include "LAP/Hung_Tlap.cuh"
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   uint *addresses_space, node_info *node_space,

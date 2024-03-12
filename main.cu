@@ -11,6 +11,7 @@
 #include "defs.cuh"
 #include "LAP/device_utils.cuh"
 #include "LAP/Hung_lap.cuh"
+#include "LAP/Hung_Tlap.cuh"
 #include "LAP/lap_kernels.cuh"
 #include "branch.cuh"
 
@@ -222,6 +223,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
   CUDA_RUNTIME(cudaFree(d_problem_info));
   CUDA_RUNTIME(cudaFree(d_hold_status));
+  d_subgrad_space->clear();
 
   delete[] h_problem_info->costs;
   delete[] h_problem_info->weights;

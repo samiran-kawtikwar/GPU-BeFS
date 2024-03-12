@@ -84,9 +84,9 @@ fundef void block_calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
   for (size_t row = 0; row < SIZE; row++)
   {
     data thread_min = (float)MAX_DATA;
-    for (size_t i = threadIdx.x + row * SIZE; i < SIZE * (row + 1); i += blockDim.x)
+    for (size_t i = threadIdx.x; i < SIZE; i += blockDim.x)
     {
-      thread_min = min(thread_min, gh.slack[i]);
+      thread_min = min(thread_min, gh.slack[row * SIZE + i]);
     }
     __syncthreads();
     thread_min = BR(temp_storage).Reduce(thread_min, cub::Min());
@@ -477,6 +477,12 @@ fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *fil
     {
       raise_error = true;
     }
+    if (i < SIZE)
+    {
+      // check min_in_rows and min_in_cols
+      if (gh.min_in_rows[i] < 0 || gh.min_in_cols[i] < 0)
+        raise_error = true;
+    }
   }
   __syncthreads();
   if (threadIdx.x == 0 && raise_error)
@@ -607,6 +613,12 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
           printf("Column cover\n");
           print_cost_matrix(gh.cover_column, 1, SIZE);
 
+          printf("min rows\n");
+          print_cost_matrix(gh.min_in_rows, 1, SIZE);
+
+          printf("Min column\n");
+          print_cost_matrix(gh.min_in_cols, 1, SIZE);
+
           printf("Printing finished by block %u\n", problemID);
           assert(false);
         }
@@ -674,6 +686,8 @@ __device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh, con
     obj += cost[c * SIZE + r];
     // printf("c= %d r= %d\n", r, c);
   }
+  __syncthreads();
+
   obj = BR(temp_storage).Reduce(obj, cub::Sum());
   if (threadIdx.x == 0)
   {
@@ -715,7 +729,7 @@ fundef void set_handles(GLOBAL_HANDLE<data> &gh, TILED_HANDLE<data> &th)
     gh.column_of_prime_at_row = &th.column_of_prime_at_row[blockIdx.x * SIZE];
     gh.row_of_green_at_column = &th.row_of_green_at_column[blockIdx.x * SIZE];
 
-    gh.d_min_in_mat_vect = &th.d_min_in_mat_vect[blockIdx.x * NBR];
+    // gh.d_min_in_mat_vect = &th.d_min_in_mat_vect[blockIdx.x * NBR];
     gh.d_min_in_mat = &th.d_min_in_mat[blockIdx.x];
     gh.min_in_rows = &th.min_in_rows[blockIdx.x * SIZE];
     gh.min_in_cols = &th.min_in_cols[blockIdx.x * SIZE];
