@@ -126,8 +126,10 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
       // Check feasibility for budget constraints
       __shared__ bool feasible;
-      // feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
+      feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
+      __syncthreads();
       feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
+      __syncthreads();
 
       if (feasible)
       {

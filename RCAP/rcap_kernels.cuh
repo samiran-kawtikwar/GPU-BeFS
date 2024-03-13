@@ -16,7 +16,7 @@ __device__ __forceinline__ void feas_check_naive(const problem_info *pinfo, cons
   if (threadIdx.x == 0)
     feasible = true;
   __syncthreads();
-  for (uint i = 0; i < ncommodities; i++)
+  for (uint i = 1; i < ncommodities; i++)
   {
     if (threadIdx.x == 0)
       budget = 0;
@@ -61,22 +61,52 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
   __syncthreads();
   for (uint i = threadIdx.x; i < psize; i += blockDim.x)
   {
-    if (row_fa[i] != 0)
+    if (row_fa[i] > 0)
       col_fa[row_fa[i] - 1] = i + 1;
   }
   __syncthreads();
 
-  gh.cost = lap_costs;
-  for (uint k = 0; k < ncommmodities; k++)
+  for (uint k = 0; k < 1; k++)
   {
-    // copy weights to lap_costs for further operations
     for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
     {
-      lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
+      lap_costs[i] = -1.0f;
+      printf("i: %u, %.1f\n ", i, lap_costs[i]);
     }
     __syncthreads();
+    // copy weights to lap_costs for further operations
+    // for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
+    // {
+    //   lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
+    // }
+    // __syncthreads();
+    if (threadIdx.x == 0)
+    {
+      DLog(debug, "testing commodity %d with costs:\n", k);
+      DLog(info, "pinfo Weights\n");
+      for (uint i = 0; i < psize; i++)
+      {
+        for (uint j = 0; j < psize; j++)
+        {
+          printf("%u, ", pinfo->weights[k * psize * psize + i * psize + j]);
+        }
+        printf("\n");
+      }
 
+      DLog(info, "LAP costs\n");
+      for (uint i = 0; i < psize; i++)
+      {
+        for (uint j = 0; j < psize; j++)
+        {
+          printf("%.1f, ", lap_costs[i * psize + j]);
+        }
+        printf("\n");
+      }
+      gh.cost = lap_costs;
+    }
+    __syncthreads();
     BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa);
+    __syncthreads();
     get_objective_block(gh);
     if (threadIdx.x == 0)
     {

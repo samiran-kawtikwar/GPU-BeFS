@@ -55,7 +55,7 @@ int main(int argc, char **argv)
   cudaGetDeviceProperties(&deviceProp, dev_);
   problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
 
-  // print(h_problem_info);
+  print(h_problem_info, true, true, false);
 
   // Copy problem info to device
   problem_info *d_problem_info;
@@ -109,10 +109,11 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemset((void *)d_work_space, 0, queue_size * sizeof(work_info)));
 
   subgrad_space *d_subgrad_space;
+#ifdef normal_run
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, queue_size * sizeof(subgrad_space)));
   d_subgrad_space->allocate(psize, ncommodities, queue_size, dev_);
   Log(debug, "Subgrad space allocated");
-
+#endif
   // Call subgrad_solver Block
   // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
   // printf("Exiting...\n");
@@ -177,7 +178,7 @@ int main(int argc, char **argv)
   execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_node_space,
              memory_queue_len);
-
+#ifdef normal_run
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
@@ -187,7 +188,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              UB);
 
-  execKernel(branch_n_bound, psize + 1, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, 1 + 1, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
@@ -197,7 +198,45 @@ int main(int argc, char **argv)
              UB, stats);
 
   printf("\n");
+#endif
+#ifndef normal_run
+  // TLAP<float> T = TLAP<float>(1, psize, dev_);
+  float lap_costs[psize * psize] = {
+      6, 4, 4, 7, 6, 7, 3, 7, 5,
+      0, 2, 0, 1, 3, 6, 5, 7, 8,
+      8, 5, 4, 8, 2, 4, 7, 4, 0,
+      0, 0, 7, 1, 8, 2, 5, 7, 3,
+      2, 7, 4, 2, 2, 8, 1, 5, 8,
+      3, 6, 3, 7, 4, 7, 7, 5, 3,
+      3, 7, 8, 5, 5, 0, 0, 0, 4,
+      3, 3, 6, 2, 7, 0, 1, 6, 7,
+      3, 6, 3, 8, 8, 4, 2, 8, 4};
+  float *d_lap_costs;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_lap_costs, psize * psize * sizeof(float)));
+  CUDA_RUNTIME(cudaMemcpy(d_lap_costs, lap_costs, psize * psize * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaDeviceSynchronize());
+  // CUDA_RUNTIME(cudaFree(d_lap_costs));
+  if (true)
+  {
+    LAP<float> lap = LAP<float>(d_lap_costs, psize, dev_);
+    lap.full_solve();
+    lap.print_solution();
+    printf("\n");
+  }
+  int row_fixed_ass[psize] = {4, 3, 0, 0, 1, 0, 2, 0, 0};
+  int col_fixed_ass[psize] = {5, 7, 2, 1, 0, 0, 0, 0, 0};
+  int *d_row_fa, *d_col_fa;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_row_fa, psize * sizeof(int)));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_col_fa, psize * sizeof(int)));
+  CUDA_RUNTIME(cudaMemcpy(d_row_fa, row_fixed_ass, psize * sizeof(int), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaMemcpy(d_col_fa, col_fixed_ass, psize * sizeof(int), cudaMemcpyHostToDevice));
 
+  TLAP<float> T = TLAP<float>(psize + 1, psize, dev_);
+  // execKernel(BHA_kernel, 2, 64, dev_, true, T.th, d_lap_costs);
+  execKernel(BHA_kernel, 2, 64, dev_, true, T.th, d_lap_costs, d_row_fa, d_col_fa);
+  CUDA_RUNTIME(cudaDeviceSynchronize());
+  exit(0);
+#endif
   // Get exit code
   ExitCode exit_code, *d_exit_code;
   CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));

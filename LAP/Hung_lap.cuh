@@ -22,6 +22,7 @@ public:
   // constructor
   LAP(cost_type *cost, size_t size, int dev = 0) : cost_(cost), dev_(dev), size_(size)
   {
+    Log(debug, "LAP Constructor called");
     h_nrows = size;
     h_ncols = size;
 
@@ -78,7 +79,7 @@ public:
   // destructor
   ~LAP()
   {
-    // Log(debug, "LAP Destructor called");
+    Log(debug, "LAP Destructor called");
     gh.clear();
   };
   cost_type full_solve()

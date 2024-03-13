@@ -49,6 +49,7 @@ struct GLOBAL_HANDLE
 
   void clear()
   {
+    Log(debug, "Clearing GH memory");
     CUDA_RUNTIME(cudaFree(slack));
     CUDA_RUNTIME(cudaFree(min_in_rows));
     CUDA_RUNTIME(cudaFree(min_in_cols));
