@@ -50,6 +50,7 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
   if (threadIdx.x == 0)
   {
     feasible = true;
+    gh.cost = lap_costs;
   }
   __syncthreads();
 
@@ -66,45 +67,15 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
   }
   __syncthreads();
 
-  for (uint k = 0; k < 1; k++)
+  for (uint k = 0; k < ncommmodities; k++)
   {
+    // copy weights to lap_costs for further operations
     for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
     {
-      lap_costs[i] = -1.0f;
-      printf("i: %u, %.1f\n ", i, lap_costs[i]);
+      lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
     }
     __syncthreads();
-    // copy weights to lap_costs for further operations
-    // for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
-    // {
-    //   lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
-    // }
-    // __syncthreads();
-    if (threadIdx.x == 0)
-    {
-      DLog(debug, "testing commodity %d with costs:\n", k);
-      DLog(info, "pinfo Weights\n");
-      for (uint i = 0; i < psize; i++)
-      {
-        for (uint j = 0; j < psize; j++)
-        {
-          printf("%u, ", pinfo->weights[k * psize * psize + i * psize + j]);
-        }
-        printf("\n");
-      }
 
-      DLog(info, "LAP costs\n");
-      for (uint i = 0; i < psize; i++)
-      {
-        for (uint j = 0; j < psize; j++)
-        {
-          printf("%.1f, ", lap_costs[i * psize + j]);
-        }
-        printf("\n");
-      }
-      gh.cost = lap_costs;
-    }
-    __syncthreads();
     BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa);
     __syncthreads();
     get_objective_block(gh);

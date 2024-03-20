@@ -535,11 +535,6 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
   block_compress_matrix(gh, sh);
   __syncthreads();
-  if (threadIdx.x == 0)
-    printf("zeros size: %d\n", sh.zeros_size);
-
-  // printArray(gh.cover_row, "cover row");
-  // printArray(gh.cover_column, "cover column");
 
   do
   {
@@ -552,8 +547,6 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
     __syncthreads();
   } while (sh.repeat_kernel);
   __syncthreads();
-  // printArray(gh.row_of_star_at_column, "row of star at column");
-  // printArray(gh.column_of_star_at_row, "column of star at row");
 
   while (1)
   {
@@ -562,14 +555,11 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
     __syncthreads();
     block_step_3(gh, sh);
     __syncthreads();
-    // printArray(gh.cover_column);
-    // printArray(gh.cover_row);
+
     if (sh.n_matches >= SIZE)
       break;
     block_step_4_init(gh);
     __syncthreads();
-
-    // checkpoint();
 
     while (1)
     {
@@ -589,9 +579,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       __syncthreads();
       if (sh.goto_5)
         break;
-      // checkpoint();
-      // printArray(&sh.zeros_size, 1, "zeros size:");
-      // printArray(gh.cover_row, SIZE, "row cover");
+
       __syncthreads();
 
       check_slack(gh, __FILE__, __LINE__);
@@ -636,12 +624,9 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
       block_step_6_init(gh, sh); // Also does dual update
       __syncthreads();
-      // printArray(gh.d_min_in_mat, 1, "min ");
-      // printArray(gh.min_in_rows, SIZE, "row dual");
+
       block_step_6_add_sub_fused_compress_matrix(gh, sh);
       __syncthreads();
-      if (threadIdx.x == 0)
-        printf("zeros size: %d\n", sh.zeros_size);
 
       check_slack(gh, __FILE__, __LINE__);
       __syncthreads();
@@ -674,20 +659,8 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
         gh.cost[i] = (data)MAX_DATA;
       }
     }
-    if (threadIdx.x == 0)
-    {
-      printf("Row fixed assignments: ");
-      for (size_t i = 0; i < SIZE; i++)
-        printf("%d, ", row_fa[i]);
-      printf("\nCol fixed assignments: ");
-      for (size_t i = 0; i < SIZE; i++)
-        printf("%d, ", col_fa[i]);
-      printf("\n");
-    }
   }
   __syncthreads();
-  if (threadIdx.x == 0)
-    printf("Block %u is calling BHA\n", blockIdx.x);
   BHA(gh, sh);
   __syncthreads();
 }

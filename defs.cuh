@@ -6,7 +6,6 @@
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
-#define normal_run
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;

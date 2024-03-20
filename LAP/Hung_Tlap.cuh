@@ -139,11 +139,6 @@ public:
     // CUDA_RUNTIME(cudaMalloc((void **)&th.tail, 1 * sizeof(uint)));
     // CUDA_RUNTIME(cudaMemset(th.tail, 0, sizeof(uint)));
 
-    // print all the constant terms
-    Log(debug, "num threads reduction %d", n_threads_reduction);
-    Log(debug, " nb4: %u\n dbs: %u\n l2dbs %u\n log2_n %u\n", th.nb4, temp4, temp5, temp2);
-    // exit(-1);
-
     if (th.memoryloc == INTERNAL)
     {
       Log(info, "Allocating internal memory for %d problems", nproblem);
