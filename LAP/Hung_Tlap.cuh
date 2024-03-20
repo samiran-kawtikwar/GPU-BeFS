@@ -24,7 +24,6 @@ public:
   TLAP(uint nproblem, size_t size, int dev = 0)
       : nprob_(nproblem), dev_(dev), size_(size)
   {
-    Log(debug, "Invoking EXTERNAL TLAP constructor");
     th.memoryloc = EXTERNAL;
     allocate(nproblem, size, dev);
     CUDA_RUNTIME(cudaDeviceSynchronize());
@@ -105,7 +104,6 @@ public:
     CUDA_RUNTIME(cudaMemcpyToSymbol(log2_n, &temp2, sizeof(log2_n)));
     uint max_active_blocks = 108;
     maxtile = min(nproblem, max_active_blocks);
-    Log(debug, "Grid dimension %d\n", maxtile);
     th.row_mask = (1 << temp2) - 1;
     // Log(debug, "log2_n %d", temp2);
     // Log(debug, "row mask: %d", th.row_mask);

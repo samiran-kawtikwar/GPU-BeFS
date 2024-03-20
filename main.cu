@@ -111,7 +111,6 @@ int main(int argc, char **argv)
   subgrad_space *d_subgrad_space;
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, queue_size * sizeof(subgrad_space)));
   d_subgrad_space->allocate(psize, ncommodities, queue_size, dev_);
-  Log(debug, "Subgrad space allocated");
 
   // Call subgrad_solver Block
   // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
