@@ -55,7 +55,7 @@ int main(int argc, char **argv)
   cudaGetDeviceProperties(&deviceProp, dev_);
   problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
 
-  print(h_problem_info, true, true, false);
+  // print(h_problem_info, true, true, false);
 
   // Copy problem info to device
   problem_info *d_problem_info;
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              UB);
 
-  execKernel(branch_n_bound, 1 + 1, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, psize + 1, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,

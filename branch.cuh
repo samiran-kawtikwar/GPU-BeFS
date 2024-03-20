@@ -139,14 +139,14 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       __shared__ bool feasible;
       feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
       __syncthreads();
-      feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
-      __syncthreads();
+      // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
+      // __syncthreads();
 
       if (feasible)
       {
         // Update bounds of the popped node
-        update_bounds(pinfo, a);
-        // update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
+        // update_bounds(pinfo, a);
+        update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
 
         if (a[0].value->LB <= global_UB)
         {
