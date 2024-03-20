@@ -332,41 +332,36 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
 __device__ bool wait_for_pop(queue_info *queue_space)
 {
   uint ns = 8;
-  // __shared__ bool pop_reset; // To print the "waiting for pop statement" only once
-  // if (threadIdx.x == 0)
-  // {
-  //   pop_reset = true;
-  // }
-  // __syncthreads();
-  do
+  __shared__ bool pop_reset, terminate_signal;
+  if (threadIdx.x == 0)
   {
-    if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+    pop_reset = false;
+    terminate_signal = false;
+  }
+  __syncthreads();
+  while (true)
+  {
+    if (threadIdx.x == 0)
     {
-      // if (threadIdx.x == 0)
-      // {
-      //   printf("Pop for block: %u, LB: %f at level: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->LB, queue_space[blockIdx.x].nodes[0].value->level);
-      // }
-      // __syncthreads();
-      break;
+      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+        pop_reset = true;
     }
     __syncthreads();
+    if (pop_reset)
+      return true;
+
     // optimality reached while a block is waiting for a pop
-    // if (threadIdx.x == 0 && pop_reset)
-    // {
-    //   pop_reset = false;
-    // DLog(debug, "block %u is waiting for pop\n", blockIdx.x);
-    // }
-    // __syncthreads();
-    if (opt_reached.load(cuda::memory_order_relaxed) ||
-        heap_overflow.load(cuda::memory_order_relaxed) ||
-        heap_underflow.load(cuda::memory_order_relaxed))
+    if (threadIdx.x == 0)
     {
-      // if (threadIdx.x == 0)
-      //   DLog(debug, "Termination reached while waiting for pop for block %u\n", blockIdx.x);
-      __syncthreads();
-      return false;
+      if (opt_reached.load(cuda::memory_order_relaxed) ||
+          heap_overflow.load(cuda::memory_order_relaxed) ||
+          heap_underflow.load(cuda::memory_order_relaxed))
+        terminate_signal = true;
     }
-  } while (ns = my_sleep(ns));
-  __syncthreads();
-  return true;
+    __syncthreads();
+    if (terminate_signal)
+      return false;
+
+    ns = my_sleep(ns);
+  }
 }
