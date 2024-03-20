@@ -94,8 +94,19 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
     set_handles(gh, subgrad_space->T.th);
 
     __shared__ uint popped_index;
-    while (!opt_reached.load(cuda::memory_order_relaxed) &&
-           !heap_overflow.load(cuda::memory_order_relaxed))
+    __shared__ bool opt_flag, overflow_flag;
+    if (threadIdx.x == 0)
+    {
+      opt_flag = false;
+      overflow_flag = false;
+      if (opt_reached.load(cuda::memory_order_relaxed))
+        opt_flag = true;
+      if (heap_overflow.load(cuda::memory_order_relaxed))
+        overflow_flag = true;
+    }
+    __syncthreads();
+
+    while (!opt_flag && !overflow_flag)
     {
       // pop a node from the bheap
       send_requests(POP, 0, NULL,
@@ -147,7 +158,13 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
           get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, psize - lvl,
                      my_addresses);
 
-          if (!heap_overflow.load(cuda::memory_order_relaxed))
+          if (threadIdx.x == 0)
+          {
+            if (heap_overflow.load(cuda::memory_order_relaxed))
+              overflow_flag = true;
+          }
+          __syncthreads();
+          if (!overflow_flag)
           {
             __shared__ uint nfail;
             if (threadIdx.x == 0)
@@ -218,6 +235,16 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                   popped_index);
+      __syncthreads();
+
+      if (threadIdx.x == 0)
+      {
+        if (opt_reached.load(cuda::memory_order_relaxed))
+          opt_flag = true;
+        if (heap_overflow.load(cuda::memory_order_relaxed))
+          overflow_flag = true;
+      }
+      __syncthreads();
     }
   }
   else
