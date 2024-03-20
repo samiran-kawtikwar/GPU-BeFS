@@ -17,19 +17,25 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                                      BHEAP<NODE> heap, queue_info *queue_space,
                                      bool *hold_status)
 {
-  __shared__ bool fork;
+  __shared__ bool fork, opt_flag, overflow_flag, underflow_flag;
   __shared__ uint qidx, dequeued_idx, count, invalid_count;
   __shared__ TaskType task_type;
   if (threadIdx.x == 0)
   {
     invalid_count = 0;
     count = 0;
+    opt_flag = false;
+    overflow_flag = false;
+    underflow_flag = false;
+    if (opt_reached.load(cuda::memory_order_relaxed))
+      opt_flag = true;
+    if (heap_overflow.load(cuda::memory_order_relaxed))
+      overflow_flag = true;
+    if (heap_underflow.load(cuda::memory_order_relaxed))
+      underflow_flag = true;
   }
   __syncthreads();
-  while (
-      !opt_reached.load(cuda::memory_order_relaxed) &&
-      !heap_overflow.load(cuda::memory_order_relaxed) &&
-      !heap_underflow.load(cuda::memory_order_relaxed))
+  while (!opt_flag && !overflow_flag && !underflow_flag)
   {
     // Dequeue here
     if (threadIdx.x == 0)
@@ -109,9 +115,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
 
       if (request_valid)
       {
-        uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
         if (threadIdx.x == 0)
         {
+          uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
           if (task_type == POP)
             queue_space[dequeued_idx].nodes[0] = min;
           queue_space[dequeued_idx].req_status.store(int(false), cuda::memory_order_release);
@@ -131,6 +137,17 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     __syncthreads();
     if (threadIdx.x == 0 && invalid_count >= gridDim.x - 1)
       heap_underflow.store(true, cuda::memory_order_release); // heap empty
+    __syncthreads();
+    if (threadIdx.x == 0)
+    {
+      if (opt_reached.load(cuda::memory_order_relaxed))
+        opt_flag = true;
+      if (heap_overflow.load(cuda::memory_order_relaxed))
+        overflow_flag = true;
+      if (heap_underflow.load(cuda::memory_order_relaxed))
+        underflow_flag = true;
+    }
+    __syncthreads();
   }
   return;
 }
@@ -248,35 +265,47 @@ __device__ void generate_request_block(const d_instruction ins,
                                        uint32_t queue_size,
                                        queue_info *queue_space)
 {
-  __shared__ bool space_free;
+  __shared__ bool space_free, termination_flag;
 
+  if (threadIdx.x == 0)
+  {
+    space_free = false;
+    termination_flag = false;
+  }
+  __syncthreads();
   // wait for previous request to be processed (i.e. space_free)
   uint ns = 8;
-  do
+  while (true)
   {
-    if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+    if (threadIdx.x == 0)
     {
-      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_acquire) == int(false))
+      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
       {
-        if (threadIdx.x == 0)
+        if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_acquire) == int(false))
         {
           queue_space[blockIdx.x].req_status.store(int(true), cuda::memory_order_release);
           space_free = true;
         }
-        __syncthreads();
-        break;
       }
     }
     __syncthreads();
+    if (space_free)
+      break;
 
     // optimality reached while a block is waiting for a request
-    if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+    if (threadIdx.x == 0)
     {
-      if (threadIdx.x == 0)
+      if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+      {
         DLog(debug, "Termination reached while waiting to send %s for block %u\n", getTextForEnum(ins.type), blockIdx.x);
-      return;
+        termination_flag = true;
+      }
     }
-  } while (ns = my_sleep(ns));
+    __syncthreads();
+    if (termination_flag)
+      return;
+    ns = my_sleep(ns);
+  }
   __syncthreads();
   if (space_free)
   {
