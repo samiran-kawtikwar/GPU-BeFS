@@ -139,10 +139,6 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
   __shared__ bool restart, terminate;
   __shared__ uint t;
 
-  if (threadIdx.x == 0 && blockIdx.x == 1)
-    DLog(critical, "Block %u is starting subgrad solver\n", blockIdx.x);
-  __syncthreads();
-
   // Initialize
   init(mult, g, LB,
        restart, terminate, lrate, t, K);
@@ -184,9 +180,6 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
               pinfo, N, K);
 
     check_feasibility(pinfo, gh, LB[t], terminate, feas);
-    if (threadIdx.x == 0 && blockIdx.x == 1)
-      DLog(critical, "block: %u, t: %u, LB: %.3f\n", blockIdx.x, t, LB[t]);
-
     if (terminate)
       break;
 

@@ -124,11 +124,6 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       if (wait_for_pop(queue_space) == false)
         break;
 
-      if (threadIdx.x == 0)
-      {
-        DLog(info, "Block %u got pop\n", blockIdx.x);
-      }
-
       // copy from queue space to work space
       node *a = work_space[blockIdx.x].nodes;
 
@@ -148,10 +143,10 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
       // Check feasibility for budget constraints
       __shared__ bool feasible;
-      // feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
-      // __syncthreads();
-      feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
+      feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
       __syncthreads();
+      // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
+      // __syncthreads();
 
       if (feasible)
       {
@@ -159,12 +154,6 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         // update_bounds(pinfo, a);
         update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
         __syncthreads();
-        if (threadIdx.x == 0)
-        {
-          // DLog(debug, "Block: %u bound: %.3f, \n", blockIdx.x, a[0].value->LB);
-          int *fa = a[0].value->fixed_assignments;
-          DLog(debug, "Block: %u bound: %.3f, with FA: %d, %d, %d, %d, %d\n", blockIdx.x, a[0].value->LB, fa[0], fa[1], fa[2], fa[3], fa[4]);
-        }
 
         if (a[0].value->LB <= global_UB)
         {

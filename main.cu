@@ -196,7 +196,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap, d_hold_status,
              UB);
 
-  execKernel(branch_n_bound, 2 + 1, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, nworkers, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
