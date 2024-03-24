@@ -9,6 +9,7 @@
 
 #include "LAP/Hung_lap.cuh"
 #include "LAP/Hung_Tlap.cuh"
+// #define POST_MORTEM
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   uint *addresses_space, node_info *node_space,
@@ -144,9 +145,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       // Check feasibility for budget constraints
       __shared__ bool feasible;
       feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
-      __syncthreads();
       // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
-      // __syncthreads();
+      __syncthreads();
 
       if (feasible)
       {
@@ -223,6 +223,38 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
                           request_queue_size, queue_space);
           }
         }
+#ifdef POST_MORTEM
+        else
+        {
+          if (threadIdx.x == 0)
+          {
+            if (a[0].value->fixed_assignments[4] - 1 == 0 &&
+                a[0].value->fixed_assignments[6] - 1 == 1 &&
+                a[0].value->fixed_assignments[3] - 1 == 2 &&
+                a[0].value->fixed_assignments[8] - 1 == 3 &&
+                a[0].value->fixed_assignments[14] - 1 == 4 &&
+                a[0].value->fixed_assignments[0] - 1 == 5 &&
+                a[0].value->fixed_assignments[2] - 1 == 6 &&
+                a[0].value->fixed_assignments[7] - 1 == 7 &&
+                a[0].value->fixed_assignments[10] - 1 == 8 &&
+                a[0].value->fixed_assignments[17] - 1 == 9 &&
+                a[0].value->fixed_assignments[9] - 1 == 10 &&
+                a[0].value->fixed_assignments[5] - 1 == 11)
+              printf("pruned with LB %f, FA: \033[1;34m%d\033[0m, %d, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, \033[1;34m%d\033[0m, %d, %d, %d, \033[1;34m%d\033[0m, %d, %d, \033[1;34m%d\033[0m, %d\n", a[0].value->LB,
+                     a[0].value->fixed_assignments[0] - 1, a[0].value->fixed_assignments[1] - 1,
+                     a[0].value->fixed_assignments[2] - 1, a[0].value->fixed_assignments[3] - 1,
+                     a[0].value->fixed_assignments[4] - 1, a[0].value->fixed_assignments[5] - 1,
+                     a[0].value->fixed_assignments[6] - 1, a[0].value->fixed_assignments[7] - 1,
+                     a[0].value->fixed_assignments[8] - 1, a[0].value->fixed_assignments[9] - 1,
+                     a[0].value->fixed_assignments[10] - 1, a[0].value->fixed_assignments[11] - 1,
+                     a[0].value->fixed_assignments[12] - 1, a[0].value->fixed_assignments[13] - 1,
+                     a[0].value->fixed_assignments[14] - 1, a[0].value->fixed_assignments[15] - 1,
+                     a[0].value->fixed_assignments[16] - 1, a[0].value->fixed_assignments[17] - 1,
+                     a[0].value->fixed_assignments[18] - 1);
+          }
+          __syncthreads();
+        }
+#endif
         if (lvl == psize && a[0].value->LB <= global_UB)
         {
           if (threadIdx.x == 0)
