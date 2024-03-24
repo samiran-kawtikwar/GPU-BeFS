@@ -88,7 +88,6 @@ public:
     h_nrows = size;
     h_ncols = size;
     CUDA_RUNTIME(cudaSetDevice(dev_));
-    Log(critical, "Allocating space for TLAP");
     CUDA_RUNTIME(cudaMemcpyToSymbol(NPROB, &nprob_, sizeof(NPROB)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(SIZE, &size, sizeof(SIZE)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(nrows, &h_nrows, sizeof(SIZE)));

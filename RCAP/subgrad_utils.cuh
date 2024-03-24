@@ -122,9 +122,10 @@ __device__ __forceinline__ void get_LB(float *LB, float &max_LB)
 {
   typedef cub::BlockReduce<float, n_threads_reduction> BR;
   __shared__ typename BR::TempStorage temp_storage;
+  float min_val = -(float)MAX_DATA;
   for (size_t i = threadIdx.x; i < MAX_ITER; i += blockDim.x)
-    LB[threadIdx.x] = max(LB[threadIdx.x], LB[i]);
-  float max_ = BR(temp_storage).Reduce(LB[threadIdx.x], cub::Max());
+    min_val = max(min_val, LB[i]);
+  float max_ = BR(temp_storage).Reduce(min_val, cub::Max());
   __syncthreads();
   if (threadIdx.x == 0)
     max_LB = ceil(max_);

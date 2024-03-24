@@ -119,7 +119,6 @@ struct subgrad_space
     CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
     CUDA_RUNTIME(cudaMemset(col_fixed_assignments, 0, nworkers * N * sizeof(int)));
 
-    Log(debug, "Allocating space for %u LAPs", nworkers);
     T = TLAP<float>(nworkers, N, devID);
     // T.allocate(nworkers, N, devID);
   };

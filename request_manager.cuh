@@ -91,10 +91,12 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             {
               if (threadIdx.x == 0)
               {
-                // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                 request_valid = false;
                 if (hold_status[dequeued_idx] == false)
+                {
+                  DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
                   invalid_count++;
+                }
                 hold_status[dequeued_idx] = true;
                 // send the pop request back to the queue
                 queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
@@ -136,7 +138,13 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     }
     __syncthreads();
     if (threadIdx.x == 0 && invalid_count >= gridDim.x - 1)
+    {
       heap_underflow.store(true, cuda::memory_order_release); // heap empty
+      DLog(critical, "Heap underflow detected at invalid_count: %u\n", invalid_count);
+      // print hold status of all blocks
+      for (uint i = 0; i < gridDim.x; i++)
+        printf("Block %u hold status: %s\n", i, hold_status[i] == true ? "true" : "false");
+    }
     __syncthreads();
     if (threadIdx.x == 0)
     {
