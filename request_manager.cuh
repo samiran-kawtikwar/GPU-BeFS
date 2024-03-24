@@ -143,7 +143,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       DLog(critical, "Heap underflow detected at invalid_count: %u\n", invalid_count);
       // print hold status of all blocks
       for (uint i = 0; i < gridDim.x; i++)
-        printf("Block %u hold status: %s\n", i, hold_status[i] == true ? "true" : "false");
+        DLog(debug, "Block %u hold status: %s\n", i, hold_status[i] == true ? "true" : "false");
     }
     __syncthreads();
     if (threadIdx.x == 0)

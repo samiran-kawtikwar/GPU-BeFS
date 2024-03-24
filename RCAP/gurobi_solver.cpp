@@ -75,7 +75,17 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
       }
     } while (UB <= LAP_obj);
     // model.write("scratch/model.lp");
-
+    // print solution values
+    // for (uint j = 0; j < N; j++)
+    // {
+    //   for (uint i = 0; i < N; i++)
+    //   {
+    //     if (x[i * N + j].get(GRB_DoubleAttr_X) > 0.5)
+    //     {
+    //       Log(debug, "x[%u][%u] = %d", i, j, int(x[i * N + j].get(GRB_DoubleAttr_X)));
+    //     }
+    //   }
+    // }
     delete[] x;
     return UB;
   }
