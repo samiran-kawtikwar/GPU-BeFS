@@ -87,30 +87,41 @@ int main(int argc, char **argv)
   t.reset();
 
   // Create space for queue
-  size_t queue_size = psize + 1; // To be changed later -- equals grid dimension of request manager
-  // size_t num_nodes = psize;      // To be changed later -- equals maximum multiplication factor
+  int nworkers; // To be changed later -- equals grid dimension of request manager
+  // Find max concurrent blocks for the branch_n_bound kernel
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads_reduction, 0);
+  Log(debug, "Max concurrent blocks per SM: %d", nworkers);
+  Log(debug, "Number of SMs: %d", deviceProp.multiProcessorCount);
+  nworkers *= deviceProp.multiProcessorCount;
+  nworkers = nworkers > (psize + 1) ? nworkers : psize + 1;
+
+  int nw1, nb1;
+  cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
+  Log(debug, "Max potential block size: %d", nb1);
+  Log(debug, "Max potential grid size: %d", nw1);
+
   queue_info *d_queue_space, *h_queue_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, queue_size * sizeof(queue_info)));
-  h_queue_space = (queue_info *)malloc(queue_size * sizeof(queue_info));
-  memset(h_queue_space, 0, queue_size * sizeof(queue_info));
-  for (size_t i = 0; i < queue_size; i++)
+  CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
+  h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
+  memset(h_queue_space, 0, nworkers * sizeof(queue_info));
+  for (size_t i = 0; i < nworkers; i++)
   {
     h_queue_space[i].req_status.store(0, cuda::memory_order_release);
     h_queue_space[i].batch_size = 0;
     h_queue_space[i].id = (uint32_t)i;
   }
-  CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, queue_size * sizeof(queue_info), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
   delete[] h_queue_space;
 
   // Create space for bound computation and branching
   Log(debug, "Creating space for subgrad solver");
   work_info *d_work_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_work_space, queue_size * sizeof(work_info)));
-  CUDA_RUNTIME(cudaMemset((void *)d_work_space, 0, queue_size * sizeof(work_info)));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_work_space, nworkers * sizeof(work_info)));
+  CUDA_RUNTIME(cudaMemset((void *)d_work_space, 0, nworkers * sizeof(work_info)));
 
   subgrad_space *d_subgrad_space;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, queue_size * sizeof(subgrad_space)));
-  d_subgrad_space->allocate(psize, ncommodities, queue_size, dev_);
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nworkers * sizeof(subgrad_space)));
+  d_subgrad_space->allocate(psize, ncommodities, nworkers, dev_);
 
   // Call subgrad_solver Block
   // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
@@ -119,23 +130,22 @@ int main(int argc, char **argv)
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
-  queue_init(request_queue, tickets, head, tail, queue_size, dev_);
+  queue_init(request_queue, tickets, head, tail, nworkers, dev_);
 
   // Create space for node_info and addresses
   size_t max_node_length = min(MAX_TOKENS, psize); // To be changed later -- equals problem size
-  uint max_workers = psize + 1;
   node_info *d_node_space;
 
   uint *d_address_space; // To store dequeued addresses
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, max_workers * max_node_length * sizeof(uint)));
-  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, max_workers * max_node_length * sizeof(uint)));
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, nworkers * max_node_length * sizeof(uint)));
+  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, nworkers * max_node_length * sizeof(uint)));
 
   // Get memory queue length based on available memory
   size_t free, total;
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.50) / memory_queue_weight; // Keeping 50% headroom
+  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // space for node_info
@@ -154,8 +164,8 @@ int main(int argc, char **argv)
 
   // create space for hold_status
   bool *d_hold_status;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, queue_size * sizeof(bool)));
-  CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, queue_size * sizeof(bool)));
+  CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, nworkers * sizeof(bool)));
+  CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
 
   // Create BHEAP on device
   BHEAP<node> d_bheap = BHEAP<node>(memory_queue_len, dev_);
@@ -182,15 +192,15 @@ int main(int argc, char **argv)
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space,
              d_problem_info, max_node_length,
-             queue_caller(request_queue, tickets, head, tail), queue_size,
-             d_queue_space, d_work_space, d_bheap,
+             queue_caller(request_queue, tickets, head, tail), nworkers,
+             d_queue_space, d_work_space, d_bheap, d_hold_status,
              UB);
 
-  execKernel(branch_n_bound, psize + 1, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, nworkers, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
-             queue_caller(request_queue, tickets, head, tail), queue_size,
+             queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_work_space, d_bheap,
              d_hold_status,
              UB, stats);

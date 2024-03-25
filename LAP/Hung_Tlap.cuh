@@ -38,72 +38,23 @@ public:
     CUDA_RUNTIME(cudaMemcpy(th.slack, Tcost_, nproblem * size * size * sizeof(cost_type), cudaMemcpyDefault));
     CUDA_RUNTIME(cudaDeviceSynchronize());
   };
-  // destructor
-  ~TLAP()
-  {
-    // th.clear();
-  }
-  /*
-    void solve()
-    {
-      if (th.memoryloc == EXTERNAL)
-      {
-        Log(critical, "Unassigned external memory, exiting...");
-        return;
-      }
-      int nblocks = maxtile;
-      Log(debug, "nblocks: %d\n", nblocks);
-      Timer t;
-      execKernel((THA<cost_type, nthr>), nblocks, nthr, dev_, true, th);
-      auto time = t.elapsed();
-      Log(info, "kernel time %f s\n", time);
-    }
 
-    void solve(cost_type *costs, int *row_ass, cost_type *row_duals, cost_type *col_duals, cost_type *obj)
-    {
-      if (th.memoryloc == INTERNAL)
-      {
-        Log(debug, "Doubly assigned external memory, exiting...");
-        return;
-      }
-      th.cost = costs;
-      th.row_of_star_at_column = row_ass;
-      th.min_in_rows = row_duals;
-      th.min_in_cols = col_duals;
-      th.objective = obj;
-      int nblocks = maxtile;
-      CUDA_RUNTIME(cudaMemcpy(th.slack, th.cost, nprob_ * size_ * size_ * sizeof(cost_type), cudaMemcpyDefault));
-      CUDA_RUNTIME(cudaMemset(th.objective, 0, nprob_ * sizeof(cost_type)));
-      CUDA_RUNTIME(cudaMemset(th.min_in_rows, 0, nprob_ * size_ * sizeof(cost_type)));
-      CUDA_RUNTIME(cudaMemset(th.min_in_cols, 0, nprob_ * size_ * sizeof(cost_type)));
-      // Log(debug, "nblocks from external solve: %d\n", nblocks);
-      Timer t;
-      execKernel((THA<cost_type, nthr>), nblocks, nthr, dev_, false, th);
-      auto time = t.elapsed();
-      // Log(info, "kernel time %f s\n", time);
-    }
-  */
   void allocate(uint nproblem, size_t size, int dev)
   {
     h_nrows = size;
     h_ncols = size;
     CUDA_RUNTIME(cudaSetDevice(dev_));
-    Log(critical, "Allocating space for TLAP");
     CUDA_RUNTIME(cudaMemcpyToSymbol(NPROB, &nprob_, sizeof(NPROB)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(SIZE, &size, sizeof(SIZE)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(nrows, &h_nrows, sizeof(SIZE)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(ncols, &h_ncols, sizeof(SIZE)));
     num_blocks_4 = max((uint)ceil((size * 1.0) / columns_per_block_step_4), 1);
-    // num_blocks_reduction = min(size, 512UL);
     CUDA_RUNTIME(cudaMemcpyToSymbol(NB4, &num_blocks_4, sizeof(NB4)));
-    // CUDA_RUNTIME(cudaMemcpyToSymbol(NBR, &num_blocks_reduction, sizeof(NBR)));
-    // const uint temp1 = ceil(size / num_blocks_reduction);
-    // CUDA_RUNTIME(cudaMemcpyToSymbol(n_rows_per_block, &temp1, sizeof(n_rows_per_block)));
-    // CUDA_RUNTIME(cudaMemcpyToSymbol(n_cols_per_block, &temp1, sizeof(n_rows_per_block)));
     const uint temp2 = (uint)ceil(log2(size_));
     CUDA_RUNTIME(cudaMemcpyToSymbol(log2_n, &temp2, sizeof(log2_n)));
-    uint max_active_blocks = 108;
-    maxtile = min(nproblem, max_active_blocks);
+
+    maxtile = nproblem;
+    Log(debug, "Allocating memory for %d problems", maxtile);
     th.row_mask = (1 << temp2) - 1;
     // Log(debug, "log2_n %d", temp2);
     // Log(debug, "row mask: %d", th.row_mask);

@@ -15,6 +15,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
                                   const problem_info *pinfo, uint max_node_length,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                   queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
+                                  bool *hold_status,
                                   const cost_type UB)
 {
   const uint bId = blockIdx.x, psize = pinfo->psize;
@@ -66,6 +67,11 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
   {
     process_requests(1, queue_caller(request_queue, tickets, head, tail), request_queue_size,
                      bheap, queue_space);
+
+    for (uint i = threadIdx.x; i < request_queue_size; i += blockDim.x)
+    {
+      hold_status[i] = false;
+    }
   }
 }
 
@@ -138,15 +144,15 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
       // Check feasibility for budget constraints
       __shared__ bool feasible;
       feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
-      __syncthreads();
       // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
-      // __syncthreads();
+      __syncthreads();
 
       if (feasible)
       {
         // Update bounds of the popped node
         // update_bounds(pinfo, a);
         update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
+        __syncthreads();
 
         if (a[0].value->LB <= global_UB)
         {

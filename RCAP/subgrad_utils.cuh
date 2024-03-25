@@ -118,16 +118,24 @@ __device__ __forceinline__ void update_mult(float *mult, float *g, const float l
   __syncthreads();
 }
 
+__device__ __forceinline__ float round_to(float val, int places)
+{
+  float factor = pow(10, places);
+  return round(val * factor) / factor;
+}
+
 __device__ __forceinline__ void get_LB(float *LB, float &max_LB)
 {
   typedef cub::BlockReduce<float, n_threads_reduction> BR;
   __shared__ typename BR::TempStorage temp_storage;
+  float val = 0;
   for (size_t i = threadIdx.x; i < MAX_ITER; i += blockDim.x)
-    LB[threadIdx.x] = max(LB[threadIdx.x], LB[i]);
-  float max_ = BR(temp_storage).Reduce(LB[threadIdx.x], cub::Max());
+    val = max(val, LB[i]);
+  __syncthreads();
+  float max_ = BR(temp_storage).Reduce(val, cub::Max());
   __syncthreads();
   if (threadIdx.x == 0)
-    max_LB = ceil(max_);
+    max_LB = ceil(round_to(max_, 3));
   __syncthreads();
 }
 

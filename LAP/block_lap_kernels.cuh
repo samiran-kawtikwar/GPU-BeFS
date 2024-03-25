@@ -21,7 +21,7 @@ __constant__ uint n_blocks_step_4;
 
 const int max_threads_per_block = 1024;
 const int columns_per_block_step_4 = 512;
-const int n_threads_reduction = 64;
+const int n_threads_reduction = 512;
 
 fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
 {
