@@ -207,6 +207,10 @@ int main(int argc, char **argv)
 
   printf("\n");
 
+#ifdef TIMER
+  printCounters(counters, false);
+#endif
+
   // Get exit code
   ExitCode exit_code, *d_exit_code;
   CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));

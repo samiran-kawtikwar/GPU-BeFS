@@ -647,10 +647,10 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
   }
   __syncthreads();
 
-  // START_TIME(SOLVE_LAP);
+  START_TIME(SOLVE_LAP);
   BHA(gh, sh);
   __syncthreads();
-  // END_TIME(SOLVE_LAP);
+  END_TIME(SOLVE_LAP);
 }
 
 template <typename data = float>

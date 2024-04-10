@@ -88,6 +88,9 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
   if (blockIdx.x > 0)
   {
+    INIT_TIME();
+    START_TIME(INIT);
+
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
     // Needed for feasibility check
     int *col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
@@ -112,18 +115,26 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
     }
     __syncthreads();
 
+    END_TIME(INIT);
+
     while (!opt_flag && !overflow_flag)
     {
+      START_TIME(QUEUING);
       // pop a node from the bheap
       send_requests(POP, 0, NULL,
                     queue_caller(request_queue, tickets, head, tail),
                     request_queue_size, queue_space);
       __syncthreads();
+      END_TIME(QUEUING);
 
+      START_TIME(WAITING);
       // Wait for POP to be done
       if (wait_for_pop(queue_space) == false)
         break;
 
+      END_TIME(WAITING);
+
+      START_TIME(TRANSFER)
       // copy from queue space to work space
       node *a = work_space[blockIdx.x].nodes;
 
@@ -141,19 +152,27 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         UB = float(global_UB);
       __syncthreads();
 
+      END_TIME(TRANSFER);
+
+      START_TIME(FEAS_CHECK);
       // Check feasibility for budget constraints
       __shared__ bool feasible;
       feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
       // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
       __syncthreads();
 
+      END_TIME(FEAS_CHECK);
+
       if (feasible)
       {
         // Update bounds of the popped node
+        START_TIME(UPDATE_LB);
         // update_bounds(pinfo, a);
         update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
         __syncthreads();
+        END_TIME(UPDATE_LB);
 
+        START_TIME(BRANCH);
         if (a[0].value->LB <= global_UB)
         {
           if (threadIdx.x == 0)
@@ -236,13 +255,18 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
           if (threadIdx.x == 0)
             atomicAdd(&stats->nodes_pruned_incumbent, 1);
         }
+        END_TIME(BRANCH);
       }
       __syncthreads();
+
+      START_TIME(QUEUING);
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                   popped_index);
       __syncthreads();
+      END_TIME(QUEUING);
 
+      START_TIME(INIT);
       if (threadIdx.x == 0)
       {
         if (opt_reached.load(cuda::memory_order_relaxed))
@@ -251,6 +275,7 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
           overflow_flag = true;
       }
       __syncthreads();
+      END_TIME(INIT);
     }
   }
   else
