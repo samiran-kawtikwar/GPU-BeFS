@@ -21,7 +21,7 @@ __constant__ uint n_blocks_step_4;
 
 const int max_threads_per_block = 1024;
 const int columns_per_block_step_4 = 512;
-const int n_threads_reduction = 512;
+// const int n_threads_reduction = 64; -- defined in defs.cuh
 
 fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
 {
@@ -522,15 +522,9 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
   block_row_sub(gh, sh);
   __syncthreads();
 
-  check_slack(gh, __FILE__, __LINE__);
-  __syncthreads();
-
   block_calc_col_min(gh);
   __syncthreads();
   block_col_sub(gh);
-  __syncthreads();
-
-  check_slack(gh, __FILE__, __LINE__);
   __syncthreads();
 
   block_compress_matrix(gh, sh);
@@ -582,9 +576,6 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
       __syncthreads();
 
-      check_slack(gh, __FILE__, __LINE__);
-      __syncthreads();
-
       block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, gh);
       __syncthreads();
 
@@ -619,16 +610,10 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       }
       __syncthreads();
 
-      check_slack(gh, __FILE__, __LINE__);
-      __syncthreads();
-
       block_step_6_init(gh, sh); // Also does dual update
       __syncthreads();
 
       block_step_6_add_sub_fused_compress_matrix(gh, sh);
-      __syncthreads();
-
-      check_slack(gh, __FILE__, __LINE__);
       __syncthreads();
     }
     __syncthreads();
@@ -661,8 +646,11 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
     }
   }
   __syncthreads();
+
+  // START_TIME(SOLVE_LAP);
   BHA(gh, sh);
   __syncthreads();
+  // END_TIME(SOLVE_LAP);
 }
 
 template <typename data = float>

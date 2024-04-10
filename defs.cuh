@@ -1,16 +1,17 @@
 #pragma once
 #include "queue/queue.cuh"
-#include "LAP/Hung_lap.cuh"
-#include "LAP/Hung_Tlap.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
+#define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
+
+const int n_threads_reduction = 512;
 
 enum TaskType
 {
@@ -91,51 +92,6 @@ struct d_instruction
   __host__ __device__ d_instruction(TaskType req_type, size_t req_len, node *nodes) { type = req_type, num_values = req_len, values = nodes; };
 };
 
-struct subgrad_space
-{
-  float *mult, *g, *lap_costs, *LB, *real_obj, *max_LB;
-  int *X;
-  int *col_fixed_assignments;
-  TLAP<float> T;
-  __host__ void allocate(uint N, uint K, uint nworkers = 0, uint devID = 0)
-  {
-    nworkers = (nworkers == 0) ? N : nworkers;
-    // allocate space for mult, g, lap_costs, LB, LB_old, X, and th
-    CUDA_RUNTIME(cudaMalloc((void **)&mult, nworkers * K * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&g, nworkers * K * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&lap_costs, nworkers * N * N * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&X, nworkers * N * N * sizeof(int)));
-    CUDA_RUNTIME(cudaMalloc((void **)&LB, nworkers * MAX_ITER * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&max_LB, nworkers * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&real_obj, nworkers * sizeof(float)));
-    CUDA_RUNTIME(cudaMalloc((void **)&col_fixed_assignments, nworkers * N * sizeof(int)));
-
-    CUDA_RUNTIME(cudaMemset(mult, 0, nworkers * K * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(g, 0, nworkers * K * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(lap_costs, 0, nworkers * N * N * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(X, 0, nworkers * N * N * sizeof(int)));
-    CUDA_RUNTIME(cudaMemset(LB, 0, nworkers * MAX_ITER * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(max_LB, 0, nworkers * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(real_obj, 0, nworkers * sizeof(float)));
-    CUDA_RUNTIME(cudaMemset(col_fixed_assignments, 0, nworkers * N * sizeof(int)));
-
-    T = TLAP<float>(nworkers, N, devID);
-    // T.allocate(nworkers, N, devID);
-  };
-  __host__ void clear()
-  {
-    CUDA_RUNTIME(cudaFree(mult));
-    CUDA_RUNTIME(cudaFree(g));
-    CUDA_RUNTIME(cudaFree(lap_costs));
-    CUDA_RUNTIME(cudaFree(LB));
-    CUDA_RUNTIME(cudaFree(real_obj));
-    CUDA_RUNTIME(cudaFree(max_LB));
-    CUDA_RUNTIME(cudaFree(X));
-    CUDA_RUNTIME(cudaFree(col_fixed_assignments));
-    T.th.clear();
-  }
-};
-
 struct queue_info
 {
   TaskType type;
@@ -163,3 +119,47 @@ struct bnb_stats
     nodes_pruned_infeasible = 0;
   }
 };
+
+enum CounterName
+{
+  INIT = 0,
+  QUEUING,
+  WAITING,
+  TRANSFER,
+  FEAS_CHECK,
+  UPDATE_LB,
+  SOLVE_LAP,
+  BRANCH,
+  NUM_COUNTERS
+};
+
+const char *CounterName_text[] = {
+    "INIT",
+    "QUEUING",
+    "WAITING",
+    "TRANSFER",
+    "FEAS_CHECK",
+    "UPDATE_LB",
+    "SOLVE_LAP",
+    "BRANCH",
+    "NUM_COUNTERS"};
+
+#ifdef TIMER
+#include "utils/profile_utils.cuh"
+#define INIT_TIME() initializeCounters(counters);
+
+#define START_TIME(countername)                    \
+  {                                                \
+    startTime(countername, &counters[blockIdx.x]); \
+  }
+
+#define END_TIME(countername)                    \
+  {                                              \
+    endTime(countername, &counters[blockIdx.x]); \
+  }
+
+#else
+#define INIT_TIME()
+#define START_TIME(countername)
+#define END_TIME(countername)
+#endif
