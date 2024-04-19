@@ -173,7 +173,15 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
         END_TIME(UPDATE_LB);
 
         START_TIME(BRANCH);
-        if (a[0].value->LB <= global_UB)
+        if (lvl == psize && a[0].value->LB <= global_UB)
+        {
+          if (threadIdx.x == 0)
+          {
+            DLog(critical, "Optimal solution reached with cost %f\n", a[0].value->LB);
+            opt_reached.store(true, cuda::memory_order_release);
+          }
+        }
+        else if (a[0].value->LB <= global_UB)
         {
           if (threadIdx.x == 0)
           {
@@ -239,14 +247,6 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
             send_requests(BATCH_PUSH, psize - lvl, a,
                           queue_caller(request_queue, tickets, head, tail),
                           request_queue_size, queue_space);
-          }
-        }
-        if (lvl == psize && a[0].value->LB <= global_UB)
-        {
-          if (threadIdx.x == 0)
-          {
-            DLog(critical, "Optimal solution reached with cost %f\n", a[0].value->LB);
-            opt_reached.store(true, cuda::memory_order_release);
           }
         }
         else
