@@ -128,7 +128,8 @@ enum CounterName
   TRANSFER,
   FEAS_CHECK,
   UPDATE_LB,
-  SOLVE_LAP,
+  SOLVE_LAP_FEAS,
+  SOLVE_LAP_SUBGRAD,
   BRANCH,
   NUM_COUNTERS
 };
@@ -140,7 +141,8 @@ const char *CounterName_text[] = {
     "TRANSFER",
     "FEAS_CHECK",
     "UPDATE_LB",
-    "SOLVE_LAP",
+    "SOLVE_LAP_FEAS",
+    "SOLVE_LAP_SUBGRAD",
     "BRANCH",
     "NUM_COUNTERS"};
 

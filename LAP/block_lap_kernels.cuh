@@ -627,7 +627,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
   return;
 }
 
-fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa)
+fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa, const int caller = 0)
 {
   if (row_fa != nullptr && col_fa != nullptr)
   {
@@ -646,11 +646,24 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
     }
   }
   __syncthreads();
-
-  START_TIME(SOLVE_LAP);
+  if (caller == 1)
+  {
+    START_TIME(SOLVE_LAP_FEAS);
+  }
+  else
+  {
+    START_TIME(SOLVE_LAP_SUBGRAD);
+  }
   BHA(gh, sh);
   __syncthreads();
-  END_TIME(SOLVE_LAP);
+  if (caller == 1)
+  {
+    END_TIME(SOLVE_LAP_FEAS);
+  }
+  else
+  {
+    END_TIME(SOLVE_LAP_SUBGRAD);
+  }
 }
 
 template <typename data = float>
