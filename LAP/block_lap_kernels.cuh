@@ -2,6 +2,7 @@
 #include "../utils/cuda_utils.cuh"
 #include "device_utils.cuh"
 #include "cub/cub.cuh"
+#include "profile_utils.cuh"
 #include "../defs.cuh"
 
 #define fundef template <typename data = float> \
@@ -515,13 +516,15 @@ fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *fil
 fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID = blockIdx.x)
 {
 
+  START_TIME(STEP1);
   block_init(gh);
   __syncthreads();
   block_calc_row_min(gh);
   __syncthreads();
   block_row_sub(gh, sh);
   __syncthreads();
-
+  END_TIME(STEP1);
+  START_TIME(STEP2);
   block_calc_col_min(gh);
   __syncthreads();
   block_col_sub(gh);
@@ -529,7 +532,6 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
   block_compress_matrix(gh, sh);
   __syncthreads();
-
   do
   {
     __syncthreads();
@@ -541,22 +543,27 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
     __syncthreads();
   } while (sh.repeat_kernel);
   __syncthreads();
+  END_TIME(STEP2);
 
   while (1)
   {
+    START_TIME(STEP3);
     __syncthreads();
     block_step_3_init(gh, sh);
     __syncthreads();
     block_step_3(gh, sh);
     __syncthreads();
+    END_TIME(STEP3);
 
     if (sh.n_matches >= SIZE)
       break;
+    START_TIME(STEP4);
     block_step_4_init(gh);
     __syncthreads();
-
+    END_TIME(STEP4);
     while (1)
     {
+      START_TIME(STEP4);
       do
       {
         __syncthreads();
@@ -571,9 +578,11 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
         __syncthreads();
       } while (sh.repeat_kernel && !sh.goto_5);
       __syncthreads();
+      END_TIME(STEP4);
+
       if (sh.goto_5)
         break;
-
+      START_TIME(STEP6);
       __syncthreads();
 
       block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, gh);
@@ -615,13 +624,16 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
 
       block_step_6_add_sub_fused_compress_matrix(gh, sh);
       __syncthreads();
+      END_TIME(STEP6);
     }
+    START_TIME(STEP5);
     __syncthreads();
     // checkpoint();
     block_step_5a(gh);
     __syncthreads();
     block_step_5b(gh);
     __syncthreads();
+    END_TIME(STEP5);
   }
   __syncthreads();
   return;

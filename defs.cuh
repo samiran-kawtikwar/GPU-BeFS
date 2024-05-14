@@ -12,6 +12,7 @@ typedef uint cost_type;
 typedef uint weight_type;
 
 const int n_threads_reduction = 512;
+const uint GRID_DIM_X = (512 / n_threads_reduction) * 108;
 
 enum TaskType
 {
@@ -80,8 +81,8 @@ struct node
 {
   float key;
   node_info *value;
-  __host__ __device__ node(){};
-  __host__ __device__ node(float a, node_info *b) : key(a), value(b){};
+  __host__ __device__ node() {};
+  __host__ __device__ node(float a, node_info *b) : key(a), value(b) {};
 };
 
 struct d_instruction
@@ -134,6 +135,17 @@ enum CounterName
   NUM_COUNTERS
 };
 
+enum LAPCounterName
+{
+  STEP1 = static_cast<int>(NUM_COUNTERS),
+  STEP2,
+  STEP3,
+  STEP4,
+  STEP5,
+  STEP6,
+  NUM_LAP_COUNTERS
+};
+
 const char *CounterName_text[] = {
     "INIT",
     "QUEUING",
@@ -146,22 +158,38 @@ const char *CounterName_text[] = {
     "BRANCH",
     "NUM_COUNTERS"};
 
+const char *LAPCounterName_text[] = {
+    "STEP1",
+    "STEP2",
+    "STEP3",
+    "STEP4",
+    "STEP5",
+    "STEP6",
+    "NUM_LAP_COUNTERS"};
+
 #ifdef TIMER
 #include "utils/profile_utils.cuh"
-#define INIT_TIME() initializeCounters(counters);
+#include "LAP/profile_utils.cuh"
+#define INIT_TIME(counters) initializeCounters(counters);
 
-#define START_TIME(countername)                    \
-  {                                                \
-    startTime(countername, &counters[blockIdx.x]); \
+#define START_TIME(countername)                                                       \
+  {                                                                                   \
+    if (countername < NUM_COUNTERS)                                                   \
+      startTime(static_cast<CounterName>(countername), &counters[blockIdx.x]);        \
+    else                                                                              \
+      startTime(static_cast<LAPCounterName>(countername), &lap_counters[blockIdx.x]); \
   }
 
-#define END_TIME(countername)                    \
-  {                                              \
-    endTime(countername, &counters[blockIdx.x]); \
+#define END_TIME(countername)                                                       \
+  {                                                                                 \
+    if (countername < NUM_COUNTERS)                                                 \
+      endTime(static_cast<CounterName>(countername), &counters[blockIdx.x]);        \
+    else                                                                            \
+      endTime(static_cast<LAPCounterName>(countername), &lap_counters[blockIdx.x]); \
   }
 
 #else
-#define INIT_TIME()
+#define INIT_TIME(counters)
 #define START_TIME(countername)
 #define END_TIME(countername)
 #endif

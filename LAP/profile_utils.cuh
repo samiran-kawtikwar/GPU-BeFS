@@ -1,23 +1,23 @@
 #pragma once
 #include "../defs.cuh"
-#include "cuda_utils.cuh"
+#include "../utils/cuda_utils.cuh"
 
-struct Counters
+struct LAPCounters
 {
-  unsigned long long int tmp[NUM_COUNTERS];
-  unsigned long long int totalTime[NUM_COUNTERS];
+  unsigned long long int tmp[NUM_LAP_COUNTERS];
+  unsigned long long int totalTime[NUM_LAP_COUNTERS];
   unsigned long long int total;
-  float percentTime[NUM_COUNTERS];
+  float percentTime[NUM_LAP_COUNTERS];
 };
 
-__managed__ Counters counters[GRID_DIM_X];
+__managed__ LAPCounters lap_counters[GRID_DIM_X];
 
-static __device__ void initializeCounters(Counters *counters)
+static __device__ void initializeCounters(LAPCounters *counters)
 {
   __syncthreads();
   if (threadIdx.x == 0)
   {
-    for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+    for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
     {
       counters->totalTime[i] = 0;
     }
@@ -25,7 +25,7 @@ static __device__ void initializeCounters(Counters *counters)
   __syncthreads();
 }
 
-static __device__ void startTime(CounterName counterName, Counters *counters)
+static __device__ void startTime(LAPCounterName counterName, LAPCounters *counters)
 {
   __syncthreads();
   if (threadIdx.x == 0)
@@ -35,7 +35,7 @@ static __device__ void startTime(CounterName counterName, Counters *counters)
   __syncthreads();
 }
 
-static __device__ void endTime(CounterName counterName, Counters *counters)
+static __device__ void endTime(LAPCounterName counterName, LAPCounters *counters)
 {
   __syncthreads();
   if (threadIdx.x == 0)
@@ -45,16 +45,16 @@ static __device__ void endTime(CounterName counterName, Counters *counters)
   __syncthreads();
 }
 
-__host__ void normalizeCounters(Counters *counters)
+__host__ void normalizeCounters(LAPCounters *counters)
 {
   for (uint t = 0; t < GRID_DIM_X; t++)
   {
     counters[t].total = 0;
-    for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+    for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
     {
       counters[t].total += counters[t].totalTime[i];
     }
-    for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+    for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
     {
       if (counters[t].total == 0)
         counters[t].percentTime[i] = 0;
@@ -64,26 +64,13 @@ __host__ void normalizeCounters(Counters *counters)
   }
 }
 
-__host__ void fixOverLappingCounters(Counters *counters)
+__host__ void printCounters(LAPCounters *counters, bool print_blockwise_stats = false)
 {
-  for (uint t = 0; t < GRID_DIM_X; t++)
-  {
-    assert(counters[t].totalTime[UPDATE_LB] >= counters[t].totalTime[SOLVE_LAP_SUBGRAD]);
-    counters[t].totalTime[UPDATE_LB] -= counters[t].totalTime[SOLVE_LAP_SUBGRAD];
-
-    assert(counters[t].totalTime[FEAS_CHECK] >= counters[t].totalTime[SOLVE_LAP_FEAS]);
-    counters[t].totalTime[FEAS_CHECK] -= counters[t].totalTime[SOLVE_LAP_FEAS];
-  }
-}
-
-__host__ void printCounters(Counters *counters, bool print_blockwise_stats = false)
-{
-  fixOverLappingCounters(counters);
   normalizeCounters(counters);
-  printf(", ");
-  for (unsigned int i = 0; i < NUM_COUNTERS; i++)
+  printf("\n, ");
+  for (unsigned int i = 0; i < NUM_LAP_COUNTERS - NUM_COUNTERS; i++)
   {
-    printf("%s, ", CounterName_text[i]);
+    printf("%s, ", LAPCounterName_text[i]);
   }
   printf("\n");
   // block wise stats
@@ -92,7 +79,7 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
     for (uint t = 0; t < GRID_DIM_X; t++)
     {
       printf("%d, ", t);
-      for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+      for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
       {
         printf("%.2f, ", counters[t].percentTime[i]);
       }
@@ -101,8 +88,8 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
   }
   // aggregate stats
   unsigned long long int grand_total = 0;
-  float col_mean[NUM_COUNTERS] = {0};
-  for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+  float col_mean[NUM_LAP_COUNTERS] = {0};
+  for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
   {
     for (uint t = 1; t < GRID_DIM_X; t++)
     {
@@ -111,13 +98,13 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
     grand_total += col_mean[i];
   }
 
-  printf("Mean, ");
-  for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+  printf("LAP Mean, ");
+  for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
     printf("%.2f, ", (col_mean[i] * 100.0f) / grand_total);
   printf("\n");
 
-  printf("Variance/mean, ");
-  for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+  printf("LAP Variance/mean, ");
+  for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
   {
     float variance = 0;
     for (uint t = 1; t < GRID_DIM_X; t++)
