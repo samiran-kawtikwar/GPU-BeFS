@@ -7,3 +7,4 @@ scripts/**
 *.txt
 *.log 
 .prettierrc
+*.ncu-rep

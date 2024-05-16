@@ -20,6 +20,9 @@
 #include "RCAP/gurobi_solver.h"
 #include "RCAP/subgrad_solver.cuh"
 
+#include "cudaProfiler.h"
+#include "cuda_profiler_api.h"
+
 __global__ void get_exit_code(ExitCode *ec)
 {
 
@@ -195,7 +198,7 @@ int main(int argc, char **argv)
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_work_space, d_bheap, d_hold_status,
              UB);
-
+  cuProfilerStart();
   execKernel(branch_n_bound, nworkers, n_threads_reduction, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
@@ -204,7 +207,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap,
              d_hold_status,
              UB, stats);
-
+  cuProfilerStop();
   printf("\n");
 
 #ifdef TIMER
