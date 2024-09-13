@@ -76,7 +76,7 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, const node
     }
     __syncthreads();
 
-    BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa);
+    BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa, 1);
     __syncthreads();
     get_objective_block(gh);
     if (threadIdx.x == 0)

@@ -65,6 +65,12 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
       }
       model.update();
       model.optimize();
+      // print if model is infeasible and exit
+      if (model.get(GRB_IntAttr_Status) == GRB_INFEASIBLE)
+      {
+        Log(error, "Model is infeasible");
+        exit(-1);
+      }
       UB = (cost_type)model.getObjective().getValue();
       if (UB <= LAP_obj)
       {

@@ -7,7 +7,6 @@
 #include "defs.cuh"
 #include "RCAP/rcap_kernels.cuh"
 
-#include "LAP/Hung_lap.cuh"
 #include "LAP/Hung_Tlap.cuh"
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
@@ -88,7 +87,8 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
 
   if (blockIdx.x > 0)
   {
-    INIT_TIME();
+    INIT_TIME(counters);
+    INIT_TIME(lap_counters);
     START_TIME(INIT);
 
     uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];

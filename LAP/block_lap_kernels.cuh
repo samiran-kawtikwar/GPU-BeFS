@@ -4,26 +4,21 @@
 #include "cub/cub.cuh"
 #include "../defs.cuh"
 
+#ifdef TIMER
+#include "profile_utils.cuh"
+#endif
+
 #define fundef template <typename data = float> \
-__device__
+__forceinline__ __device__
 
 __constant__ size_t SIZE;
 __constant__ uint NPROB;
 __constant__ size_t nrows;
 __constant__ size_t ncols;
 
-__constant__ uint NB4;
-__constant__ uint NBR;
-__constant__ uint n_rows_per_block;
-__constant__ uint n_cols_per_block;
-__constant__ uint log2_n, log2_data_block_size, data_block_size;
-__constant__ uint n_blocks_step_4;
-
 const int max_threads_per_block = 1024;
-const int columns_per_block_step_4 = 512;
-// const int n_threads_reduction = 64; -- defined in defs.cuh
 
-fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
+fundef void init(GLOBAL_HANDLE<data> &gh) // with single block
 {
   // initializations
   // for step 2
@@ -42,7 +37,7 @@ fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
   }
 }
 
-fundef void block_calc_col_min(GLOBAL_HANDLE<data> &gh) // with single block
+fundef void calc_col_min(GLOBAL_HANDLE<data> &gh) // with single block
 {
   for (size_t col = 0; col < SIZE; col++)
   {
@@ -55,7 +50,7 @@ fundef void block_calc_col_min(GLOBAL_HANDLE<data> &gh) // with single block
       i += (size_t)blockDim.x * SIZE;
     }
     __syncthreads();
-    typedef cub::BlockReduce<data, n_threads_reduction> BR;
+    typedef cub::BlockReduce<data, n_threads> BR;
     __shared__ typename BR::TempStorage temp_storage;
     thread_min = BR(temp_storage).Reduce(thread_min, cub::Min());
     if (threadIdx.x == 0)
@@ -66,7 +61,7 @@ fundef void block_calc_col_min(GLOBAL_HANDLE<data> &gh) // with single block
   }
 }
 
-fundef void block_col_sub(GLOBAL_HANDLE<data> &gh) // with single block
+fundef void col_sub(GLOBAL_HANDLE<data> &gh) // with single block
 {
   // uint i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   for (size_t i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
@@ -76,10 +71,10 @@ fundef void block_col_sub(GLOBAL_HANDLE<data> &gh) // with single block
   }
 }
 
-fundef void block_calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
+fundef void calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
 {
 
-  typedef cub::BlockReduce<data, n_threads_reduction> BR;
+  typedef cub::BlockReduce<data, n_threads> BR;
   __shared__ typename BR::TempStorage temp_storage;
   // size_t i = (size_t)blockIdx.x * SIZE + (size_t)threadIdx.x;
   for (size_t row = 0; row < SIZE; row++)
@@ -99,7 +94,7 @@ fundef void block_calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
   }
 }
 
-fundef void block_row_sub(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // with single block
+fundef void row_sub(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // with single block
 {
   for (size_t i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
   {
@@ -115,23 +110,20 @@ fundef bool block_near_zero(data val)
   return ((val < eps) && (val > -eps));
 }
 
-fundef void block_compress_matrix(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // with single block
+fundef void compress_matrix(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // with single block
 {
   // size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   for (size_t i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
   {
     if (block_near_zero(gh.slack[i]))
     {
-      // atomicAdd(&zeros_size, 1);
-      // size_t b = i >> log2_data_block_size;
-      size_t i0 = i & ~((size_t)data_block_size - 1); // == b << log2_data_block_size
       size_t j = (size_t)atomicAdd(&sh.zeros_size, 1);
-      gh.zeros[i0 + j] = i; // saves index of zeros in slack matrix per block
+      gh.zeros[j] = i; // saves index of zeros in slack matrix per block
     }
   }
 }
 
-fundef void block_step_2(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HANDLE &sh)
+fundef void step_2(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
 {
   uint i = threadIdx.x;
   __shared__ bool repeat;
@@ -145,7 +137,7 @@ fundef void block_step_2(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HAN
     if (i == 0)
       repeat = false;
     __syncthreads();
-    for (int j = i; j < min(sh.zeros_size, temp_blockdim); j += blockDim.x)
+    for (int j = i; j < sh.zeros_size; j += blockDim.x)
     {
       uint z = gh.zeros[j];
       uint l = z % nrows;
@@ -177,7 +169,7 @@ fundef void block_step_2(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HAN
     sh.repeat_kernel = true;
 }
 
-fundef void block_step_3_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
+fundef void step_3_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
 {
   for (size_t i = threadIdx.x; i < nrows; i += blockDim.x)
   {
@@ -188,24 +180,17 @@ fundef void block_step_3_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For
     sh.n_matches = 0;
 }
 
-fundef void block_step_3(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
+fundef void step_3(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
 {
   // size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
-  __shared__ int matches;
-  if (threadIdx.x == 0)
-    matches = 0;
-  __syncthreads();
   for (size_t i = threadIdx.x; i < nrows; i += blockDim.x)
   {
     if (gh.row_of_star_at_column[i] >= 0)
     {
       gh.cover_column[i] = 1;
-      atomicAdd((int *)&matches, 1);
+      atomicAdd((int *)&sh.n_matches, 1);
     }
   }
-  __syncthreads();
-  if (threadIdx.x == 0)
-    atomicAdd((int *)&sh.n_matches, matches);
 }
 
 // STEP 4
@@ -216,7 +201,7 @@ fundef void block_step_3(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For sing
 // uncovered zeros left. Save the smallest uncovered value and
 // Go to Step 6.
 
-fundef void block_step_4_init(GLOBAL_HANDLE<data> &gh)
+fundef void step_4_init(GLOBAL_HANDLE<data> &gh)
 {
   for (size_t i = threadIdx.x; i < SIZE; i += blockDim.x)
   {
@@ -225,20 +210,18 @@ fundef void block_step_4_init(GLOBAL_HANDLE<data> &gh)
   }
 }
 
-fundef void block_step_4(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HANDLE &sh)
+fundef void step_4(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
 {
+  const size_t i = threadIdx.x;
   __shared__ bool s_found;
-  __shared__ bool s_goto_5;
-  __shared__ bool s_repeat_kernel;
   volatile int *v_cover_row = gh.cover_row;
   volatile int *v_cover_column = gh.cover_column;
 
-  const size_t i = threadIdx.x;
   // const size_t b = blockIdx.x;
   if (i == 0)
   {
-    s_repeat_kernel = false;
-    s_goto_5 = false;
+    sh.goto_5 = false;
+    sh.repeat_kernel = false;
   }
   do
   {
@@ -257,7 +240,7 @@ fundef void block_step_4(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HAN
       if (!v_cover_column[c] && !v_cover_row[l])
       {
         s_found = true; // find uncovered zero
-        s_repeat_kernel = true;
+        sh.repeat_kernel = true;
         gh.column_of_prime_at_row[l] = c; // prime the uncovered zero
 
         if (c1 >= 0)
@@ -268,64 +251,56 @@ fundef void block_step_4(GLOBAL_HANDLE<data> &gh, uint temp_blockdim, SHARED_HAN
         }
         else
         {
-          s_goto_5 = true;
+          sh.goto_5 = true;
         }
       }
     } // for(int j
     __syncthreads();
-  } while (s_found && !s_goto_5);
-  if (i == 0 && s_repeat_kernel)
-    sh.repeat_kernel = true;
-  if (i == 0 && s_goto_5) // if any blocks needs to go to step 5, algorithm needs to go to step 5
-    sh.goto_5 = true;
+  } while (s_found && !sh.goto_5);
 }
 
-template <typename data = float, uint blockSize = n_threads_reduction>
-__device__ void block_min_reduce_kernel1(const data *g_idata, data *g_odata,
-                                         GLOBAL_HANDLE<data> &gh)
+template <typename data = float, uint blockSize = n_threads>
+__device__ void min_reduce_kernel1(const data *g_idata, data *g_odata,
+                                   GLOBAL_HANDLE<data> &gh)
 {
-  __shared__ data sdata[blockSize];
+  data myval = MAX_DATA;
   const uint tid = threadIdx.x;
   // size_t i = (size_t)blockIdx.x * ((size_t)blockSize * 2) + (size_t)tid;
   size_t i = tid;
-  // size_t gridSize = (size_t)blockSize * 2;
-  sdata[tid] = MAX_DATA;
+  size_t gridSize = (size_t)blockSize * 2;
   while (i < SIZE * SIZE)
   {
     size_t i1 = i;
-    // size_t i2 = i + blockSize;
+    size_t i2 = i + blockSize;
     size_t l1 = i1 % nrows; // local index within the row
     size_t c1 = i1 / nrows; // Row number
     data g1 = MAX_DATA, g2 = MAX_DATA;
     if (gh.cover_row[l1] == 1 || gh.cover_column[c1] == 1)
       g1 = MAX_DATA;
     else
-    {
       g1 = g_idata[i1];
+    if (i2 < SIZE * SIZE)
+    {
+      size_t l2 = i2 % nrows;
+      size_t c2 = i2 / nrows;
+      if (gh.cover_row[l2] == 1 || gh.cover_column[c2] == 1)
+        g2 = MAX_DATA;
+      else
+        g2 = g_idata[i2];
     }
-    // if (i2 < n)
-    // {
-    //   size_t l2 = i2 % nrows;
-    //   size_t c2 = i2 / nrows;
-    //   if (gh.cover_row[l2] == 1 || gh.cover_column[c2] == 1)
-    //     g2 = MAX_DATA;
-    //   else
-    //     g2 = g_idata[i2];
-    // }
-    sdata[tid] = min(sdata[tid], g1);
-    i += blockSize;
+    myval = min(myval, min(g1, g2));
+    i += gridSize;
   }
   __syncthreads();
   typedef cub::BlockReduce<data, blockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
-  data val = sdata[tid];
-  data minimum = BR(temp_storage).Reduce(val, cub::Min());
+  data minimum = BR(temp_storage).Reduce(myval, cub::Min());
   __syncthreads();
   if (tid == 0)
     *g_odata = minimum;
 }
 
-fundef void block_step_6_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
+fundef void step_6_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
 {
   // size_t id = (size_t)threadIdx.x + (size_t)blockIdx.x * (size_t)blockDim.x;
   if (threadIdx.x == 0)
@@ -342,11 +317,11 @@ fundef void block_step_6_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
       gh.min_in_cols[i] -= gh.d_min_in_mat[0] / 2;
   }
   __syncthreads();
-  for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
-  {
-    gh.zeros[i] = 0;
-  }
-  __syncthreads();
+  // for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
+  // {
+  //   gh.zeros[i] = 0;
+  // }
+  // __syncthreads();
 }
 
 /* STEP 5:
@@ -361,7 +336,7 @@ zero of the series, star each primed zero of the series, erase
 all primes and uncover every line in the matrix. Return to Step 3.*/
 
 // Eliminates joining paths
-fundef void block_step_5a(GLOBAL_HANDLE<data> gh)
+fundef void step_5a(GLOBAL_HANDLE<data> gh)
 {
   // size_t i = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   for (size_t i = threadIdx.x; i < SIZE; i += blockDim.x)
@@ -383,7 +358,7 @@ fundef void block_step_5a(GLOBAL_HANDLE<data> gh)
 }
 
 // Applies the alternating paths
-fundef void block_step_5b(GLOBAL_HANDLE<data> &gh)
+fundef void step_5b(GLOBAL_HANDLE<data> &gh)
 {
   // size_t j = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   for (size_t j = threadIdx.x; j < SIZE; j += blockDim.x)
@@ -414,7 +389,7 @@ fundef void block_step_5b(GLOBAL_HANDLE<data> &gh)
   }
 }
 
-fundef void block_step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
+fundef void step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh) // For single block
 {
   // STEP 6:
   /*STEP 6: Add the minimum uncovered value to every element of each covered
@@ -443,17 +418,15 @@ fundef void block_step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<data> &gh, 
     // compress matrix
     if (block_near_zero(reg))
     {
-      // size_t b = i >> log2_data_block_size;
-      size_t i0 = i & ~((size_t)data_block_size - 1); // == b << log2_data_block_size
       int j = atomicAdd(&sh.zeros_size, 1);
-      gh.zeros[i0 + j] = i;
+      gh.zeros[j] = i;
     }
   }
 }
 
-fundef void block_get_objective(GLOBAL_HANDLE<data> &gh)
+fundef void get_objective(GLOBAL_HANDLE<data> &gh)
 {
-  typedef cub::BlockReduce<data, n_threads_reduction> BR;
+  typedef cub::BlockReduce<data, n_threads> BR;
   __shared__ typename BR::TempStorage temp_storage;
   data obj = 0;
   for (uint c = threadIdx.x; c < SIZE; c += blockDim.x)
@@ -466,8 +439,9 @@ fundef void block_get_objective(GLOBAL_HANDLE<data> &gh)
   __syncthreads();
 }
 
-fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
-{ /*
+/*
+fundef void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
+{
    __shared__ bool raise_error;
    if (threadIdx.x == 0)
      raise_error = false;
@@ -507,56 +481,60 @@ fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *fil
    }
    __syncthreads();
    return;
-   */
-}
 
-// #define MY_PRINT
+}
+*/
 
 fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID = blockIdx.x)
 {
 
-  block_init(gh);
+  START_TIME(STEP1);
+  init(gh);
   __syncthreads();
-  block_calc_row_min(gh);
+  calc_row_min(gh);
   __syncthreads();
-  block_row_sub(gh, sh);
+  row_sub(gh, sh);
+  __syncthreads();
+  END_TIME(STEP1);
+  START_TIME(STEP2);
+  calc_col_min(gh);
+  __syncthreads();
+  col_sub(gh);
   __syncthreads();
 
-  block_calc_col_min(gh);
+  compress_matrix(gh, sh);
   __syncthreads();
-  block_col_sub(gh);
-  __syncthreads();
-
-  block_compress_matrix(gh, sh);
-  __syncthreads();
-
   do
   {
     __syncthreads();
     if (threadIdx.x == 0)
       sh.repeat_kernel = false;
     __syncthreads();
-    uint temp_blockdim = (gh.nb4 > 1 || sh.zeros_size > max_threads_per_block) ? max_threads_per_block : sh.zeros_size;
-    block_step_2(gh, temp_blockdim, sh);
+    step_2(gh, sh);
     __syncthreads();
   } while (sh.repeat_kernel);
   __syncthreads();
+  END_TIME(STEP2);
 
   while (1)
   {
+    START_TIME(STEP3);
     __syncthreads();
-    block_step_3_init(gh, sh);
+    step_3_init(gh, sh);
     __syncthreads();
-    block_step_3(gh, sh);
+    step_3(gh, sh);
     __syncthreads();
+    END_TIME(STEP3);
 
     if (sh.n_matches >= SIZE)
       break;
-    block_step_4_init(gh);
+    START_TIME(STEP4);
+    step_4_init(gh);
     __syncthreads();
-
+    END_TIME(STEP4);
     while (1)
     {
+      START_TIME(STEP4);
       do
       {
         __syncthreads();
@@ -566,17 +544,18 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
           sh.repeat_kernel = false;
         }
         __syncthreads();
-        uint temp_blockdim = (gh.nb4 > 1 || sh.zeros_size > max_threads_per_block) ? max_threads_per_block : sh.zeros_size;
-        block_step_4(gh, temp_blockdim, sh);
+        step_4(gh, sh);
         __syncthreads();
       } while (sh.repeat_kernel && !sh.goto_5);
       __syncthreads();
+      END_TIME(STEP4);
+
       if (sh.goto_5)
         break;
-
+      START_TIME(STEP6);
       __syncthreads();
 
-      block_min_reduce_kernel1<data, n_threads_reduction>(gh.slack, gh.d_min_in_mat, gh);
+      min_reduce_kernel1<data, n_threads>(gh.slack, gh.d_min_in_mat, gh);
       __syncthreads();
 
       if (gh.d_min_in_mat[0] <= eps)
@@ -610,24 +589,27 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       }
       __syncthreads();
 
-      block_step_6_init(gh, sh); // Also does dual update
+      step_6_init(gh, sh); // Also does dual update
       __syncthreads();
 
-      block_step_6_add_sub_fused_compress_matrix(gh, sh);
+      step_6_add_sub_fused_compress_matrix(gh, sh);
       __syncthreads();
+      END_TIME(STEP6);
     }
+    START_TIME(STEP5);
     __syncthreads();
     // checkpoint();
-    block_step_5a(gh);
+    step_5a(gh);
     __syncthreads();
-    block_step_5b(gh);
+    step_5b(gh);
     __syncthreads();
+    END_TIME(STEP5);
   }
   __syncthreads();
   return;
 }
 
-fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa)
+fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int *col_fa, const int caller = 0)
 {
   if (row_fa != nullptr && col_fa != nullptr)
   {
@@ -646,17 +628,30 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
     }
   }
   __syncthreads();
-
-  START_TIME(SOLVE_LAP);
+  if (caller == 1)
+  {
+    START_TIME(SOLVE_LAP_FEAS);
+  }
+  else
+  {
+    START_TIME(SOLVE_LAP_SUBGRAD);
+  }
   BHA(gh, sh);
   __syncthreads();
-  END_TIME(SOLVE_LAP);
+  if (caller == 1)
+  {
+    END_TIME(SOLVE_LAP_FEAS);
+  }
+  else
+  {
+    END_TIME(SOLVE_LAP_SUBGRAD);
+  }
 }
 
 template <typename data = float>
 __device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh, const data *cost = nullptr)
 {
-  typedef cub::BlockReduce<data, n_threads_reduction> BR;
+  typedef cub::BlockReduce<data, n_threads> BR;
   __shared__ typename BR::TempStorage temp_storage;
   data obj = 0;
   if (cost == nullptr)
@@ -703,7 +698,6 @@ fundef void set_handles(GLOBAL_HANDLE<data> &gh, TILED_HANDLE<data> &th)
     gh.column_of_star_at_row = &th.column_of_star_at_row[blockIdx.x * SIZE];
 
     gh.zeros = &th.zeros[blockIdx.x * SIZE * SIZE];
-    gh.zeros_size_b = &th.zeros_size_b[blockIdx.x * NB4];
 
     gh.cover_row = &th.cover_row[blockIdx.x * SIZE];
     gh.cover_column = &th.cover_column[blockIdx.x * SIZE];

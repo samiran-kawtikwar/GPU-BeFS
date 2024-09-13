@@ -2,7 +2,6 @@
 #include "../defs.cuh"
 #include "../utils/logger.cuh"
 #include "../utils/timer.h"
-#include "lap_kernels.cuh"
 #include "block_lap_kernels.cuh"
 #include <thrust/reduce.h>
 #include <thrust/execution_policy.h>
@@ -48,32 +47,16 @@ public:
     CUDA_RUNTIME(cudaMemcpyToSymbol(SIZE, &size, sizeof(SIZE)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(nrows, &h_nrows, sizeof(SIZE)));
     CUDA_RUNTIME(cudaMemcpyToSymbol(ncols, &h_ncols, sizeof(SIZE)));
-    num_blocks_4 = max((uint)ceil((size * 1.0) / columns_per_block_step_4), 1);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(NB4, &num_blocks_4, sizeof(NB4)));
-    const uint temp2 = (uint)ceil(log2(size_));
-    CUDA_RUNTIME(cudaMemcpyToSymbol(log2_n, &temp2, sizeof(log2_n)));
 
     maxtile = nproblem;
     Log(debug, "Allocating memory for %d problems", maxtile);
-    th.row_mask = (1 << temp2) - 1;
-    // Log(debug, "log2_n %d", temp2);
-    // Log(debug, "row mask: %d", th.row_mask);
-    th.nb4 = max((uint)ceil((size * 1.0) / columns_per_block_step_4), 1);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(n_blocks_step_4, &th.nb4, sizeof(n_blocks_step_4)));
-    const uint temp4 = columns_per_block_step_4 * pow(2, ceil(log2(size_)));
-    // Log(debug, "dbs: %u", temp4);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(data_block_size, &temp4, sizeof(data_block_size)));
-    const uint temp5 = temp2 + (uint)ceil(log2(columns_per_block_step_4));
-    // Log(debug, "l2dbs: %u", temp5);
-    CUDA_RUNTIME(cudaMemcpyToSymbol(log2_data_block_size, &temp5, sizeof(log2_data_block_size)));
+
     // external memory
     CUDA_RUNTIME(cudaMalloc((void **)&th.slack, maxtile * size * size * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.column_of_star_at_row, maxtile * h_nrows * sizeof(int)));
 
     // internal memory
     CUDA_RUNTIME(cudaMalloc((void **)&th.zeros, maxtile * h_nrows * h_ncols * sizeof(size_t)));
-    CUDA_RUNTIME(cudaMalloc((void **)&th.zeros_size_b, maxtile * num_blocks_4 * sizeof(size_t)));
-
     CUDA_RUNTIME(cudaMalloc((void **)&th.cover_row, maxtile * h_nrows * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.cover_column, maxtile * h_ncols * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.column_of_prime_at_row, maxtile * h_nrows * sizeof(int)));
