@@ -6,7 +6,7 @@
 #include "../defs.cuh"
 
 #define fundef template <typename data = float> \
-__device__
+__forceinline__ __device__
 
 __constant__ size_t SIZE;
 __constant__ uint NPROB;
@@ -22,7 +22,6 @@ __constant__ uint n_blocks_step_4;
 
 const int max_threads_per_block = 1024;
 const int columns_per_block_step_4 = 512;
-// const int n_threads_reduction = 64; -- defined in defs.cuh
 
 fundef void block_init(GLOBAL_HANDLE<data> &gh) // with single block
 {
@@ -467,8 +466,9 @@ fundef void block_get_objective(GLOBAL_HANDLE<data> &gh)
   __syncthreads();
 }
 
-fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
-{ /*
+/*
+fundef void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
+{
    __shared__ bool raise_error;
    if (threadIdx.x == 0)
      raise_error = false;
@@ -508,10 +508,9 @@ fundef __forceinline__ void check_slack(GLOBAL_HANDLE<data> &gh, const char *fil
    }
    __syncthreads();
    return;
-   */
-}
 
-// #define MY_PRINT
+}
+*/
 
 fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID = blockIdx.x)
 {
