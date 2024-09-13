@@ -87,7 +87,7 @@ int main(int argc, char **argv)
   t.reset();
 
   // Create space for queue
-  int nworkers; // To be changed later -- equals grid dimension of request manager
+  int nworkers; // equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
   cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads_reduction, 0);
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
