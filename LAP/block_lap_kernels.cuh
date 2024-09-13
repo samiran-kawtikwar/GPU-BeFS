@@ -2,8 +2,11 @@
 #include "../utils/cuda_utils.cuh"
 #include "device_utils.cuh"
 #include "cub/cub.cuh"
-#include "profile_utils.cuh"
 #include "../defs.cuh"
+
+#ifdef TIMER
+#include "profile_utils.cuh"
+#endif
 
 #define fundef template <typename data = float> \
 __forceinline__ __device__
