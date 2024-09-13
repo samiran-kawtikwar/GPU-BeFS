@@ -10,9 +10,7 @@
 #include "memory_manager.cuh"
 #include "defs.cuh"
 #include "LAP/device_utils.cuh"
-#include "LAP/Hung_lap.cuh"
 #include "LAP/Hung_Tlap.cuh"
-#include "LAP/lap_kernels.cuh"
 #include "branch.cuh"
 
 #include "RCAP/config.h"
@@ -92,7 +90,7 @@ int main(int argc, char **argv)
   // Create space for queue
   int nworkers; // To be changed later -- equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads_reduction, 0);
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads, 0);
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   Log(debug, "Number of SMs: %d", deviceProp.multiProcessorCount);
   nworkers *= deviceProp.multiProcessorCount;
@@ -127,7 +125,7 @@ int main(int argc, char **argv)
   d_subgrad_space->allocate(psize, ncommodities, nworkers, dev_);
 
   // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, n_threads_reduction, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  // execKernel(g_subgrad_solver, 1, n_threads, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
   // printf("Exiting...\n");
   // exit(0);
 
@@ -191,7 +189,7 @@ int main(int argc, char **argv)
              memory_queue_len);
 
   // Frist kernel to create L1 nodes
-  execKernel(initial_branching, 2, n_threads_reduction, dev_, true,
+  execKernel(initial_branching, 2, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space,
              d_problem_info, max_node_length,
@@ -199,7 +197,7 @@ int main(int argc, char **argv)
              d_queue_space, d_work_space, d_bheap, d_hold_status,
              UB);
   cuProfilerStart();
-  execKernel(branch_n_bound, nworkers, n_threads_reduction, dev_, true,
+  execKernel(branch_n_bound, nworkers, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
              d_problem_info, max_node_length,
