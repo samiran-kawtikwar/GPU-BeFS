@@ -16,8 +16,6 @@ __constant__ uint NPROB;
 __constant__ size_t nrows;
 __constant__ size_t ncols;
 
-const int max_threads_per_block = 1024;
-
 fundef void init(GLOBAL_HANDLE<data> &gh) // with single block
 {
   // initializations
