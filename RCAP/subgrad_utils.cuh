@@ -107,9 +107,9 @@ __device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,
   }
 }
 
-__device__ __forceinline__ void update_mult(float *mult, float *g, const float lrate,
-                                            float &denom, const float LB,
-                                            const float &UB, const uint K)
+__device__ __forceinline__ void update_mult(float *mult, float *g, float lrate,
+                                            float denom, float LB,
+                                            float UB, uint K)
 {
   for (int k = threadIdx.x; k < K; k += blockDim.x)
   {

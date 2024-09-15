@@ -73,15 +73,16 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     }
   }
 }
-
-__global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                               uint *addresses_space, node_info *node_space, subgrad_space *subgrad_space,
-                               const problem_info *pinfo, uint max_node_length,
-                               queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                               queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
-                               bool *hold_status,
-                               const cost_type global_UB,
-                               bnb_stats *stats)
+// Add launch bounds
+__launch_bounds__(n_threads, 2048 / n_threads)
+    __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
+                                   uint *addresses_space, node_info *node_space, subgrad_space *subgrad_space,
+                                   const problem_info *pinfo, uint max_node_length,
+                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
+                                   queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
+                                   bool *hold_status,
+                                   const cost_type global_UB,
+                                   bnb_stats *stats)
 {
   const uint psize = pinfo->psize;
 
@@ -91,11 +92,17 @@ __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), 
     INIT_TIME(lap_counters);
     START_TIME(INIT);
 
-    uint *my_addresses = &addresses_space[blockIdx.x * max_node_length];
-    // Needed for feasibility check
-    int *col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
-    float *lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
+    __shared__ uint *my_addresses;
+    __shared__ int *col_fa;
+    __shared__ float *lap_costs;
 
+    if (threadIdx.x == 0)
+    {
+      my_addresses = &addresses_space[blockIdx.x * max_node_length];
+      // Needed for feasibility check
+      col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
+      lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
+    }
     __shared__ GLOBAL_HANDLE<float> gh;
     __shared__ SHARED_HANDLE sh;
     __shared__ float UB;

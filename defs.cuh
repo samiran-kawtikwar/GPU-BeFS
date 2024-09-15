@@ -11,8 +11,8 @@ typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
 
-const uint n_threads = 512;
-const uint GRID_DIM_X = (512 / n_threads) * 108;
+const uint n_threads = 64;
+const uint GRID_DIM_X = (2048 / n_threads) * 108;
 
 enum TaskType
 {
