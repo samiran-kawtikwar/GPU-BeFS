@@ -87,7 +87,7 @@ __host__ void printCounters(LAPCounters *counters, bool print_blockwise_stats = 
     }
   }
   // aggregate stats
-  unsigned long long int grand_total = 0;
+  float grand_total = 0;
   float col_mean[NUM_LAP_COUNTERS] = {0};
   for (unsigned int i = STEP1; i < NUM_LAP_COUNTERS; ++i)
   {
