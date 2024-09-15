@@ -53,16 +53,21 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
                                      GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
 {
   const uint N = pinfo->psize, K = pinfo->ncommodities;
-  float *mult = &space->mult[blockIdx.x * K];
-  float *g = &space->g[blockIdx.x * K];
-  float *lap_costs = &space->lap_costs[blockIdx.x * N * N];
-  int *X = &space->X[blockIdx.x * N * N];
-  float *LB = &space->LB[blockIdx.x * MAX_ITER];
-  float *real_obj = &space->real_obj[blockIdx.x];
-
+  __shared__ float *mult, *g, *lap_costs, *LB, *real_obj;
+  __shared__ int *X;
+  if (threadIdx.x == 0)
+  {
+    mult = &space->mult[blockIdx.x * K];
+    g = &space->g[blockIdx.x * K];
+    lap_costs = &space->lap_costs[blockIdx.x * N * N];
+    LB = &space->LB[blockIdx.x * MAX_ITER];
+    real_obj = &space->real_obj[blockIdx.x];
+    X = &space->X[blockIdx.x * N * N];
+  }
   __shared__ float lrate, denom, feas, neg;
   __shared__ bool restart, terminate;
   __shared__ uint t;
+  __syncthreads();
 
   // Initialize
   init(mult, g, LB,

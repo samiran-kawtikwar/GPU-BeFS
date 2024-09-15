@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 // #define __DEBUG__
+// #define DEBUG_D
 
 namespace logger
 {
@@ -83,41 +84,47 @@ __host__ __forceinline__ void Log(LogPriorityEnum l, const char *f, Args... args
 }
 
 template <typename... Args>
-__device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... args)
+__forceinline__ __device__ void DLog(LogPriorityEnum l, const char *f, Args... args)
 {
-
-  bool print = true;
-  static int logging_flag = int(false);
-#ifndef __DEBUG__
-  if (l == debug)
+#ifdef DEBUG_D
   {
-    print = false;
-  }
+    bool print = true;
+    static int logging_flag = int(false);
+#ifndef __DEBUG__
+    if (l == debug)
+    {
+      print = false;
+    }
 #endif // __DEBUG__
 
-  if (print)
-  {
-    uint ns = 8;
-    do
+    if (print)
     {
-      if (atomicCAS(&logging_flag, int(false), int(true)) == int(false))
+      uint ns = 8;
+      do
       {
+        if (atomicCAS(&logging_flag, int(false), int(true)) == int(false))
+        {
 
-        // Line Color Set
-        const char *prefix = (l == debug)                    ? "\033[1;34m" // blue
-                             : (l == info)                   ? "\033[1;32m" // green
-                             : (l == warn)                   ? "\033[1;33m" // brown
-                             : (l == error || l == critical) ? "\033[1;31m" // red
-                                                             : "\033[0m";   // default
+          // Line Color Set
+          const char *prefix = (l == debug)                    ? "\033[1;34m" // blue
+                               : (l == info)                   ? "\033[1;32m" // green
+                               : (l == warn)                   ? "\033[1;33m" // brown
+                               : (l == error || l == critical) ? "\033[1;31m" // red
+                                                               : "\033[0m";   // default
 
-        printf(prefix);
-        printf(f, args...);
-        printf("\033[0m");
-        atomicCAS(&logging_flag, int(true), int(false));
-        break;
-      }
-    } while (ns = logger::my_sleep(ns));
+          printf(prefix);
+          printf(f, args...);
+          printf("\033[0m");
+          atomicCAS(&logging_flag, int(true), int(false));
+          break;
+        }
+      } while (ns = logger::my_sleep(ns));
+    }
   }
+#else
+  {
+  }
+#endif
 }
 
 template <typename cost_type = int>

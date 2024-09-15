@@ -16,8 +16,6 @@ __constant__ uint NPROB;
 __constant__ size_t nrows;
 __constant__ size_t ncols;
 
-const int max_threads_per_block = 1024;
-
 fundef void init(GLOBAL_HANDLE<data> &gh) // with single block
 {
   // initializations
@@ -260,8 +258,7 @@ fundef void step_4(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
 }
 
 template <typename data = float, uint blockSize = n_threads>
-__device__ void min_reduce_kernel1(const data *g_idata, data *g_odata,
-                                   GLOBAL_HANDLE<data> &gh)
+__forceinline__ __device__ void min_reduce_kernel1(GLOBAL_HANDLE<data> &gh)
 {
   data myval = MAX_DATA;
   const uint tid = threadIdx.x;
@@ -278,7 +275,7 @@ __device__ void min_reduce_kernel1(const data *g_idata, data *g_odata,
     if (gh.cover_row[l1] == 1 || gh.cover_column[c1] == 1)
       g1 = MAX_DATA;
     else
-      g1 = g_idata[i1];
+      g1 = gh.slack[i1];
     if (i2 < SIZE * SIZE)
     {
       size_t l2 = i2 % nrows;
@@ -286,7 +283,7 @@ __device__ void min_reduce_kernel1(const data *g_idata, data *g_odata,
       if (gh.cover_row[l2] == 1 || gh.cover_column[c2] == 1)
         g2 = MAX_DATA;
       else
-        g2 = g_idata[i2];
+        g2 = gh.slack[i2];
     }
     myval = min(myval, min(g1, g2));
     i += gridSize;
@@ -297,7 +294,7 @@ __device__ void min_reduce_kernel1(const data *g_idata, data *g_odata,
   data minimum = BR(temp_storage).Reduce(myval, cub::Min());
   __syncthreads();
   if (tid == 0)
-    *g_odata = minimum;
+    *gh.d_min_in_mat = minimum;
 }
 
 fundef void step_6_init(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
@@ -555,39 +552,42 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       START_TIME(STEP6);
       __syncthreads();
 
-      min_reduce_kernel1<data, n_threads>(gh.slack, gh.d_min_in_mat, gh);
+      min_reduce_kernel1<data, n_threads>(gh);
       __syncthreads();
 
-      if (gh.d_min_in_mat[0] <= eps)
+      if (__DEBUG__D)
       {
-        __syncthreads();
-        if (threadIdx.x == 0)
+        if (gh.d_min_in_mat[0] <= eps)
         {
-          printf("minimum element in problemID %u is non positive: %.3f\n", problemID, (float)gh.d_min_in_mat[0]);
-          printf("Cost\n");
-          print_cost_matrix(gh.cost, SIZE, SIZE);
+          __syncthreads();
+          if (threadIdx.x == 0)
+          {
+            printf("minimum element in problemID %u is non positive: %.3f\n", problemID, (float)gh.d_min_in_mat[0]);
+            printf("Cost\n");
+            print_cost_matrix(gh.cost, SIZE, SIZE);
 
-          printf("Slack\n");
-          print_cost_matrix(gh.slack, SIZE, SIZE);
+            printf("Slack\n");
+            print_cost_matrix(gh.slack, SIZE, SIZE);
 
-          printf("Row cover\n");
-          print_cost_matrix(gh.cover_row, 1, SIZE);
+            printf("Row cover\n");
+            print_cost_matrix(gh.cover_row, 1, SIZE);
 
-          printf("Column cover\n");
-          print_cost_matrix(gh.cover_column, 1, SIZE);
+            printf("Column cover\n");
+            print_cost_matrix(gh.cover_column, 1, SIZE);
 
-          printf("min rows\n");
-          print_cost_matrix(gh.min_in_rows, 1, SIZE);
+            printf("min rows\n");
+            print_cost_matrix(gh.min_in_rows, 1, SIZE);
 
-          printf("Min column\n");
-          print_cost_matrix(gh.min_in_cols, 1, SIZE);
+            printf("Min column\n");
+            print_cost_matrix(gh.min_in_cols, 1, SIZE);
 
-          printf("Printing finished by block %u\n", problemID);
-          assert(false);
+            printf("Printing finished by block %u\n", problemID);
+            assert(false);
+          }
+          return;
         }
-        return;
+        __syncthreads();
       }
-      __syncthreads();
 
       step_6_init(gh, sh); // Also does dual update
       __syncthreads();
@@ -649,7 +649,7 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
 }
 
 template <typename data = float>
-__device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh, const data *cost = nullptr)
+__forceinline__ __device__ void get_objective_block(GLOBAL_HANDLE<data> &gh, const data *cost = nullptr)
 {
   typedef cub::BlockReduce<data, n_threads> BR;
   __shared__ typename BR::TempStorage temp_storage;
@@ -673,7 +673,7 @@ __device__ __forceinline__ void get_objective_block(GLOBAL_HANDLE<data> &gh, con
 }
 
 template <typename data = float>
-__device__ __forceinline__ void get_X(GLOBAL_HANDLE<data> &gh, int *X)
+__forceinline__ __device__ void get_X(GLOBAL_HANDLE<data> &gh, int *X)
 {
   for (uint i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
   {
@@ -683,7 +683,7 @@ __device__ __forceinline__ void get_X(GLOBAL_HANDLE<data> &gh, int *X)
   for (uint r = threadIdx.x; r < SIZE; r += blockDim.x)
   {
     int c = gh.column_of_star_at_row[r];
-    assert(c >= 0);
+    // assert(c >= 0);
     X[c * SIZE + r] = 1;
   }
   __syncthreads();

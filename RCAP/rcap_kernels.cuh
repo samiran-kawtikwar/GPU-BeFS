@@ -111,7 +111,10 @@ __device__ void update_bounds_subgrad(const problem_info *pinfo, subgrad_space *
                                       float &UB, node *a, int *col_fa,
                                       GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
 {
-  int *row_fa = a[0].value->fixed_assignments;
+  __shared__ int *row_fa;
+  if (threadIdx.x == 0)
+    row_fa = a[0].value->fixed_assignments;
+  __syncthreads();
   // Update UB using the current fixed assignments
   for (int i = threadIdx.x; i < SIZE; i += blockDim.x)
   {

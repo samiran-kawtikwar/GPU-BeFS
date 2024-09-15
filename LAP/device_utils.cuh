@@ -4,7 +4,7 @@
 #define MAX_DATA float(1e6)
 typedef unsigned long long int uint64;
 #define eps 1e-6
-#define __DEBUG__D true
+#define __DEBUG__D false
 
 #define checkpoint()                                       \
   {                                                        \
