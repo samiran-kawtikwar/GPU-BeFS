@@ -94,7 +94,6 @@ int main(int argc, char **argv)
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   Log(debug, "Number of SMs: %d", deviceProp.multiProcessorCount);
   nworkers *= deviceProp.multiProcessorCount;
-  nworkers = nworkers > (psize + 1) ? nworkers : psize + 1;
 
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
