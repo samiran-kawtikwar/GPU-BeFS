@@ -73,6 +73,9 @@ __host__ void fixOverLappingCounters(Counters *counters)
 
     assert(counters[t].totalTime[FEAS_CHECK] >= counters[t].totalTime[SOLVE_LAP_FEAS]);
     counters[t].totalTime[FEAS_CHECK] -= counters[t].totalTime[SOLVE_LAP_FEAS];
+
+    assert(counters[t].totalTime[WAITING] >= counters[t].totalTime[WAITING_UNDERFLOW]);
+    counters[t].totalTime[WAITING] -= counters[t].totalTime[WAITING_UNDERFLOW];
   }
 }
 

@@ -107,7 +107,7 @@ int main(int argc, char **argv)
   memset(h_queue_space, 0, nworkers * sizeof(queue_info));
   for (size_t i = 0; i < nworkers; i++)
   {
-    h_queue_space[i].req_status.store(0, cuda::memory_order_release);
+    h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
     h_queue_space[i].batch_size = 0;
     h_queue_space[i].id = (uint32_t)i;
   }

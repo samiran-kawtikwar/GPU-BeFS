@@ -67,14 +67,14 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
 
       __syncthreads();
       __shared__ NODE min;
-      __shared__ bool request_valid;
+      __shared__ int request_status;
       if (blockIdx.x == 0)
       {
         __syncthreads();
         // if (threadIdx.x == 0)
         //   printf("Block %u is processing %s request for block %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx);
         if (threadIdx.x == 0)
-          request_valid = true;
+          request_status = DONE;
         __syncthreads();
         switch (task_type)
         {
@@ -91,10 +91,11 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             {
               if (threadIdx.x == 0)
               {
-                request_valid = false;
+                request_status = INVALID;
                 if (hold_status[dequeued_idx] == false)
                 {
                   // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
+                  queue_space[dequeued_idx].req_status.store(INVALID, cuda::memory_order_release);
                   invalid_count++;
                 }
                 hold_status[dequeued_idx] = true;
@@ -115,14 +116,14 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       }
       __syncthreads();
 
-      if (request_valid)
+      if (request_status == DONE)
       {
         if (threadIdx.x == 0)
         {
           uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
           if (task_type == POP)
             queue_space[dequeued_idx].nodes[0] = min;
-          queue_space[dequeued_idx].req_status.store(int(false), cuda::memory_order_release);
+          queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
           atomicAdd(&(count), 1);
           if (count % 100000 == 0)
             DLog(debug, "Processed %u requests\n", count);
@@ -256,7 +257,7 @@ __device__ void process_requests(uint INS_LEN,
       {
         if (task_type == POP)
           queue_space[dequeued_idx].nodes[0] = min;
-        queue_space[dequeued_idx].req_status.store(int(false), cuda::memory_order_release);
+        queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
         // printf("Set %u occupied to false\n", dequeued_idx);
         atomicAdd(&(count), 1);
         invalid_count = 0;
@@ -287,11 +288,11 @@ __device__ void generate_request_block(const d_instruction ins,
   {
     if (threadIdx.x == 0)
     {
-      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
+      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == DONE)
       {
-        if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_acquire) == int(false))
+        if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_acquire) == DONE)
         {
-          queue_space[blockIdx.x].req_status.store(int(true), cuda::memory_order_release);
+          queue_space[blockIdx.x].req_status.store(PROCESSING, cuda::memory_order_release);
           space_free = true;
         }
       }
@@ -369,23 +370,36 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
 __device__ bool wait_for_pop(queue_info *queue_space)
 {
   uint ns = 8;
-  __shared__ bool pop_reset, terminate_signal;
+  __shared__ int pop_status;
+  __shared__ bool terminate_signal, first_invalid;
   if (threadIdx.x == 0)
   {
-    pop_reset = false;
+    pop_status = PROCESSING;
     terminate_signal = false;
+    first_invalid = true;
   }
   __syncthreads();
   while (true)
   {
     if (threadIdx.x == 0)
-    {
-      if (queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed) == int(false))
-        pop_reset = true;
-    }
+      pop_status = queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed);
     __syncthreads();
-    if (pop_reset)
+    if (pop_status == INVALID && first_invalid)
+    {
+      START_TIME(WAITING_UNDERFLOW);
+      if (threadIdx.x == 0)
+      {
+        // DLog(debug, "Block %u's pop request was invalid\n", blockIdx.x);
+        first_invalid = false;
+      }
+      __syncthreads();
+    }
+    if (pop_status == DONE)
+    {
+      if (!first_invalid)
+        END_TIME(WAITING_UNDERFLOW);
       return true;
+    }
 
     // optimality reached while a block is waiting for a pop
     if (threadIdx.x == 0)
