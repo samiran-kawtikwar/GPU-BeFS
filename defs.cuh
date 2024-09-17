@@ -97,9 +97,9 @@ struct queue_info
 {
   TaskType type;
   node nodes[100];
-  uint batch_size; // For batch push
-  cuda::atomic<uint32_t, cuda::thread_scope_device> req_status;
-  uint id; // For mapping with request queue; DON'T UPDATE
+  uint batch_size;                                              // For batch push
+  cuda::atomic<uint32_t, cuda::thread_scope_device> req_status; // 0 done 1 pending 2 invalid
+  uint id;                                                      // For mapping with request queue; DON'T UPDATE
 };
 
 struct work_info
@@ -126,6 +126,7 @@ enum CounterName
   INIT = 0,
   QUEUING,
   WAITING,
+  WAITING_UNDERFLOW,
   TRANSFER,
   FEAS_CHECK,
   UPDATE_LB,
@@ -146,10 +147,18 @@ enum LAPCounterName
   NUM_LAP_COUNTERS
 };
 
+enum RequestStatus
+{
+  DONE = 0,
+  PROCESSING,
+  INVALID
+};
+
 const char *CounterName_text[] = {
     "INIT",
     "QUEUING",
     "WAITING",
+    "WAITING_UNDERFLOW",
     "TRANSFER",
     "FEAS_CHECK",
     "UPDATE_LB",

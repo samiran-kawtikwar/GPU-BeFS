@@ -73,6 +73,9 @@ __host__ void fixOverLappingCounters(Counters *counters)
 
     assert(counters[t].totalTime[FEAS_CHECK] >= counters[t].totalTime[SOLVE_LAP_FEAS]);
     counters[t].totalTime[FEAS_CHECK] -= counters[t].totalTime[SOLVE_LAP_FEAS];
+
+    assert(counters[t].totalTime[WAITING] >= counters[t].totalTime[WAITING_UNDERFLOW]);
+    counters[t].totalTime[WAITING] -= counters[t].totalTime[WAITING_UNDERFLOW];
   }
 }
 
@@ -100,7 +103,7 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
     }
   }
   // aggregate stats
-  unsigned long long int grand_total = 0;
+  float grand_total = 0;
   float col_mean[NUM_COUNTERS] = {0};
   for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
   {
@@ -110,7 +113,7 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
     }
     grand_total += col_mean[i];
   }
-
+  // print grand_total
   printf("Mean, ");
   for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
     printf("%.2f, ", (col_mean[i] * 100.0f) / grand_total);
