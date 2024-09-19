@@ -392,12 +392,15 @@ __device__ bool wait_for_pop(queue_info *queue_space)
         // DLog(debug, "Block %u's pop request was invalid\n", blockIdx.x);
         first_invalid = false;
       }
-      __syncthreads();
     }
+    __syncthreads();
     if (pop_status == DONE)
     {
       if (!first_invalid)
+      {
         END_TIME(WAITING_UNDERFLOW);
+      }
+      __syncthreads();
       return true;
     }
 
