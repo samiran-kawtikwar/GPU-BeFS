@@ -133,12 +133,11 @@ int main(int argc, char **argv)
   queue_init(request_queue, tickets, head, tail, nworkers, dev_);
 
   // Create space for node_info and addresses
-  size_t max_node_length = min(MAX_TOKENS, psize); // To be changed later -- equals problem size
   node_info *d_node_space;
 
   uint *d_address_space; // To store dequeued addresses
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, nworkers * max_node_length * sizeof(uint)));
-  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, nworkers * max_node_length * sizeof(uint)));
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, nworkers * psize * sizeof(uint)));
+  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, nworkers * psize * sizeof(uint)));
 
   // Get memory queue length based on available memory
   size_t free, total;
@@ -191,7 +190,7 @@ int main(int argc, char **argv)
   execKernel(initial_branching, 2, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space,
-             d_problem_info, max_node_length,
+             d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_work_space, d_bheap, d_hold_status,
              UB);
@@ -199,7 +198,7 @@ int main(int argc, char **argv)
   execKernel(branch_n_bound, nworkers, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_address_space, d_node_space, d_subgrad_space,
-             d_problem_info, max_node_length,
+             d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_work_space, d_bheap,
              d_hold_status,

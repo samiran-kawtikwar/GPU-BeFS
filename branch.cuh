@@ -11,14 +11,14 @@
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   uint *addresses_space, node_info *node_space,
-                                  const problem_info *pinfo, uint max_node_length,
+                                  const problem_info *pinfo,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                   queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
                                   bool *hold_status,
                                   const cost_type UB)
 {
   const uint bId = blockIdx.x, psize = pinfo->psize;
-  uint *my_addresses = &addresses_space[bId * max_node_length];
+  uint *my_addresses = &addresses_space[bId * psize];
   if (bId > 0)
   {
     __shared__ uint nchild, child_index;
@@ -28,6 +28,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
       child_index = 0;
     }
     __syncthreads();
+    // get nchildren
     for (uint i = threadIdx.x; i < psize; i += blockDim.x)
     {
       cost_type LB = pinfo->costs[i * psize];
@@ -43,18 +44,14 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 
     for (uint i = threadIdx.x; i < psize; i += blockDim.x)
     {
-      uint my_index = 0;
-      cost_type LB = pinfo->costs[i * psize];
-      if (LB < UB)
-      {
-        my_index = atomicAdd(&child_index, 1);
-        node_info *b = &node_space[my_addresses[my_index]];
-        b->fixed_assignments[i] = 1; // fix row i to column lvl + 1.
-        b->LB = (float)pinfo->costs[i * psize];
-        b->level = 1;
-        a[my_index].value = b;
-        a[my_index].key = (float)pinfo->costs[i * psize];
-      }
+      uint my_index = atomicAdd(&child_index, 1);
+      node_info *b = &node_space[my_addresses[my_index]];
+      b->fixed_assignments[i] = 1;            // fix row i to column lvl + 1.
+      b->LB = (float)pinfo->costs[i * psize]; // Does not perform subgradient here just naive LB
+      b->level = 1;
+      a[my_index].value = b;
+      a[my_index].key = (float)pinfo->costs[i * psize];
+
       // printf("Key: %f\n", a[i].key);
     }
     __syncthreads();
@@ -77,7 +74,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 __launch_bounds__(n_threads, 2048 / n_threads)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                    uint *addresses_space, node_info *node_space, subgrad_space *subgrad_space,
-                                   const problem_info *pinfo, uint max_node_length,
+                                   const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                    queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
                                    bool *hold_status,
@@ -98,7 +95,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
 
     if (threadIdx.x == 0)
     {
-      my_addresses = &addresses_space[blockIdx.x * max_node_length];
+      my_addresses = &addresses_space[blockIdx.x * psize];
       // Needed for feasibility check
       col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
       lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
@@ -216,7 +213,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
               node_info *b = &node_space[my_addresses[i]];
               for (uint j = 0; j < psize; j++)
                 b->fixed_assignments[j] = a[0].value->fixed_assignments[j];
-              b->LB = a[0].value->LB;
+              b->LB = a[0].value->LB; // set bound of child = bound of parent
 
               // fix further assignments
               if (b->fixed_assignments[i] == 0)
