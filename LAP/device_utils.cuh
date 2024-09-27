@@ -84,9 +84,11 @@ struct TILED_HANDLE
 
   void clear()
   {
+    Log(debug, "Clearing TH memory");
     CUDA_RUNTIME(cudaFree(min_in_rows));
     CUDA_RUNTIME(cudaFree(min_in_cols));
     CUDA_RUNTIME(cudaFree(row_of_star_at_column));
+    // CUDA_RUNTIME(cudaFree(cost));
     CUDA_RUNTIME(cudaFree(slack));
     CUDA_RUNTIME(cudaFree(zeros));
     CUDA_RUNTIME(cudaFree(column_of_star_at_row));
@@ -95,6 +97,7 @@ struct TILED_HANDLE
     CUDA_RUNTIME(cudaFree(column_of_prime_at_row));
     CUDA_RUNTIME(cudaFree(row_of_green_at_column));
     CUDA_RUNTIME(cudaFree(d_min_in_mat));
+    CUDA_RUNTIME(cudaFree(objective));
   };
 };
 
