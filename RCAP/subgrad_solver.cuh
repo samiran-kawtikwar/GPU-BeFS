@@ -43,7 +43,7 @@ struct subgrad_space
     CUDA_RUNTIME(cudaFree(max_LB));
     CUDA_RUNTIME(cudaFree(X));
     CUDA_RUNTIME(cudaFree(col_fixed_assignments));
-    T.th.clear();
+    T.clear();
   }
 };
 
