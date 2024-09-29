@@ -56,6 +56,12 @@ int main(int argc, char **argv)
   cudaGetDeviceProperties(&deviceProp, dev_);
   problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
 
+  Timer t = Timer();
+  // Solve RCAP
+  cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
+  // print time
+  Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
   // print(h_problem_info, true, true, false);
 
   // Copy problem info to device
@@ -69,13 +75,6 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemcpy(d_problem_info->weights, h_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type), cudaMemcpyHostToDevice));
   CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->budgets, ncommodities * sizeof(weight_type)));
   CUDA_RUNTIME(cudaMemcpy(d_problem_info->budgets, h_problem_info->budgets, ncommodities * sizeof(weight_type), cudaMemcpyHostToDevice));
-
-  Timer t = Timer();
-  // Solve RCAP
-  cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
-  Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
-  // print time
-  Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
 
   // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);

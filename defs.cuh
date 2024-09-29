@@ -75,6 +75,8 @@ struct node_info
   float LB;
   uint level;
   uint id; // For mapping with memory queue; DON'T UPDATE
+  __host__ __device__ node_info() {};
+  __host__ __device__ node_info(int *fa, float lb, uint lvl, uint address = 0) : fixed_assignments(fa), LB(lb), level(lvl), id(address) {};
 };
 
 struct node

@@ -112,7 +112,12 @@ __device__ void print_cost_matrix(float *cost, int n, int m)
   for (int i = 0; i < n; i++)
   {
     for (int j = 0; j < m; j++)
-      printf("%.3f ", cost[i * m + j]);
+    {
+      if (cost[i * m + j] < 1000)
+        printf("%d ", (int)cost[i * m + j]);
+      else
+        printf("inf ");
+    }
     printf("\n");
   }
 }
