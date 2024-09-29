@@ -184,7 +184,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
         {
           if (threadIdx.x == 0)
           {
-            DLog(critical, "Optimal solution reached with cost %f\n", a[0].value->LB);
+            printf("Optimal solution reached with cost %f\n", a[0].value->LB);
             opt_reached.store(true, cuda::memory_order_release);
           }
         }

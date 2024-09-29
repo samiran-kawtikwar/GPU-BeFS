@@ -5,7 +5,7 @@
 
 namespace host_log
 {
-#define __DEBUG__ ;
+  // #define __DEBUG__ ;
   const char newline[] = "\n";
   const char comma[] = ", ";
   const char colon[] = ": ";
