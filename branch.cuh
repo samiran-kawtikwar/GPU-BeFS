@@ -197,6 +197,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
       // Check feasibility and update bounds of each child
       for (uint i = 0; i < psize - lvl; i++)
       {
+        START_TIME(BRANCH);
         __shared__ node current_node;
         __shared__ node_info current_node_info;
         // Get popped_node info in the worker space
@@ -235,18 +236,23 @@ __launch_bounds__(n_threads, 2048 / n_threads)
           current_node.value = &current_node_info;
         }
         __syncthreads();
+        END_TIME(BRANCH);
+        START_TIME(FEAS_CHECK);
         feas_check(pinfo, &current_node, col_fa, lap_costs, stats, my_space->feasible[i], gh, sh);
         __syncthreads();
+        END_TIME(FEAS_CHECK);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
+          START_TIME(UPDATE_LB);
           update_bounds_subgrad(pinfo, subgrad_space, UB, &current_node, col_fa, gh, sh);
           __syncthreads();
+          END_TIME(UPDATE_LB);
           // print LB
           // if (threadIdx.x == 0)
           // DLog(debug, "lvl: %u\t Child %u -- LB: %f ", lvl, i, current_node.value->LB);
           // __syncthreads();
-
+          START_TIME(BRANCH);
           if (lvl + 1 == psize && current_node.value->LB <= global_UB)
           {
             if (threadIdx.x == 0)
@@ -275,15 +281,15 @@ __launch_bounds__(n_threads, 2048 / n_threads)
               my_space->feasible[i] = false;
             }
           }
+          END_TIME(BRANCH);
         }
         else
         {
+          START_TIME(BRANCH);
           if (threadIdx.x == 0)
-          {
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
-            // DLog(warn, "lvl: %u\t Child %u is infeasible\n", lvl, i);
-          }
           __syncthreads();
+          END_TIME(BRANCH);
         }
       }
       __syncthreads();
@@ -292,18 +298,13 @@ __launch_bounds__(n_threads, 2048 / n_threads)
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                   popped_index);
       __syncthreads();
-      // if (threadIdx.x == 0)
-      // {
-      //   DLog(critical, "Freed memory address %u\n", popped_index);
-      // }
-      // __syncthreads();
-      END_TIME(QUEUING);
       if (opt_reached.load(cuda::memory_order_relaxed))
       {
         if (threadIdx.x == 0)
           opt_flag = true;
       }
       __syncthreads();
+
       if (nchild_feas > 0 && !opt_flag)
       {
         // get nchild addresses
@@ -344,7 +345,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
         }
         __syncthreads();
       }
-      END_TIME(BRANCH);
+      END_TIME(QUEUING);
 
       START_TIME(INIT);
       if (threadIdx.x == 0)
