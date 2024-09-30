@@ -49,11 +49,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
       }
     }
     __syncthreads();
-    if (threadIdx.x == 0)
-    {
-      printf("Block %u has %u feasible children\n", bId, nchild);
-    }
-    __syncthreads();
+
     // Get nchild addresses
     get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild,
                my_addresses);
@@ -77,7 +73,6 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
         a[my_index].value = b;
         a[my_index].key = my_space->LB[child_id];
       }
-      // printf("Key: %f\n", a[i].key);
     }
 
     __syncthreads();
@@ -184,7 +179,6 @@ __launch_bounds__(n_threads, 2048 / n_threads)
         popped_index = popped_node.value->id;
         UB = float(global_UB); // Reset UB
         lvl = popped_node.value->level;
-        // DLog(warn, "Popped a node with LB %f at address %u\n", popped_node.key, popped_index);
       }
       __syncthreads();
       END_TIME(TRANSFER);
@@ -248,10 +242,6 @@ __launch_bounds__(n_threads, 2048 / n_threads)
           update_bounds_subgrad(pinfo, subgrad_space, UB, &current_node, col_fa, gh, sh);
           __syncthreads();
           END_TIME(UPDATE_LB);
-          // print LB
-          // if (threadIdx.x == 0)
-          // DLog(debug, "lvl: %u\t Child %u -- LB: %f ", lvl, i, current_node.value->LB);
-          // __syncthreads();
           START_TIME(BRANCH);
           if (lvl + 1 == psize && current_node.value->LB <= global_UB)
           {
@@ -265,7 +255,6 @@ __launch_bounds__(n_threads, 2048 / n_threads)
           {
             if (threadIdx.x == 0)
             {
-              // DLog(warn, "Added to heap\n");
               atomicAdd(&stats->nodes_explored, 1);
               nchild_feas++;
               my_space->feasible[i] = true;
@@ -276,7 +265,6 @@ __launch_bounds__(n_threads, 2048 / n_threads)
           {
             if (threadIdx.x == 0)
             {
-              // DLog(warn, "Pruned due to incumbancy\n");
               atomicAdd(&stats->nodes_pruned_incumbent, 1);
               my_space->feasible[i] = false;
             }
@@ -335,7 +323,6 @@ __launch_bounds__(n_threads, 2048 / n_threads)
                 b->fixed_assignments[j] = my_space->fixed_assignments[i * psize + j];
               a[ind].value = b;
               a[ind].key = my_space->LB[i];
-              // DLog(info, "Pushing child %u with LB %f stored at address: %u\n", i, a[ind].key, my_addresses[ind]);
             }
           }
           __syncthreads();
@@ -367,14 +354,5 @@ __launch_bounds__(n_threads, 2048 / n_threads)
   if (threadIdx.x == 0)
   {
     DLog(debug, "Block %u is done\n", blockIdx.x);
-  }
-}
-
-__global__ void dummy_vector_add(const cost_type *a, uint N2)
-{
-  uint i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i < N2)
-  {
-    printf("a[%u] = %u\n", i, a[i]);
   }
 }

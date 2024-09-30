@@ -436,52 +436,6 @@ fundef void get_objective(GLOBAL_HANDLE<data> &gh)
   __syncthreads();
 }
 
-/*
-fundef void check_slack(GLOBAL_HANDLE<data> &gh, const char *filename, const int line)
-{
-   __shared__ bool raise_error;
-   if (threadIdx.x == 0)
-     raise_error = false;
-   __syncthreads();
-
-   for (size_t i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
-   {
-     if (gh.slack[i] < 0)
-     {
-       raise_error = true;
-     }
-     // if (i < SIZE)
-     // {
-     //   // check min_in_rows and min_in_cols
-     //   if (gh.min_in_rows[i] < 0 || gh.min_in_cols[i] < 0)
-     //     raise_error = true;
-     // }
-   }
-   __syncthreads();
-   if (threadIdx.x == 0 && raise_error)
-   {
-     printf("Negative slack in problemID %u at %s:%u\n", blockIdx.x, filename, line);
-
-     printf("Cost\n");
-     print_cost_matrix(gh.cost, SIZE, SIZE);
-
-     printf("Slack\n");
-     print_cost_matrix(gh.slack, SIZE, SIZE);
-
-     printf("min rows\n");
-     print_cost_matrix(gh.min_in_rows, 1, SIZE);
-
-     printf("Min column\n");
-     print_cost_matrix(gh.min_in_cols, 1, SIZE);
-
-     assert(false);
-   }
-   __syncthreads();
-   return;
-
-}
-*/
-
 fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID = blockIdx.x)
 {
 
