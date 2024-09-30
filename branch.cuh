@@ -10,17 +10,16 @@
 #include "LAP/Hung_Tlap.cuh"
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                  uint *addresses_space, node_info *node_space,
-                                  const problem_info *pinfo, uint max_node_length,
+                                  node_info *node_space, const problem_info *pinfo,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                                  queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
-                                  bool *hold_status,
-                                  const cost_type UB)
+                                  queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
+                                  bool *hold_status, const cost_type UB)
 {
   const uint bId = blockIdx.x, psize = pinfo->psize;
-  uint *my_addresses = &addresses_space[bId * max_node_length];
   if (bId > 0)
   {
+    uint *my_addresses = work_space[bId].address_space;
+    worker_info *my_space = &work_space[bId];
     __shared__ uint nchild, child_index;
     if (threadIdx.x == 0)
     {
@@ -28,39 +27,69 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
       child_index = 0;
     }
     __syncthreads();
-    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    // get nchildren and their bounds
+    for (uint child_id = 0; child_id < psize; child_id++)
     {
-      cost_type LB = pinfo->costs[i * psize];
-      if (LB < UB)
+      if (threadIdx.x == 0)
       {
-        atomicAdd(&nchild, 1);
+        my_space->fixed_assignments[psize * child_id + child_id] = 1;
+        my_space->level[child_id] = 1;
+        my_space->LB[child_id] = (float)pinfo->costs[child_id * psize];
+      }
+      __syncthreads();
+      if (threadIdx.x == 0)
+      {
+        if (my_space->LB[child_id] < UB)
+        {
+          my_space->feasible[child_id] = true;
+          atomicAdd(&nchild, 1);
+        }
+        else
+          my_space->feasible[child_id] = false;
       }
     }
     __syncthreads();
+
+    // Get nchild addresses
     get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild,
                my_addresses);
-    node *a = work_space[bId].nodes;
 
-    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    // construct a for sending to queue
+    node *a = work_space[bId].nodes;
+    __syncthreads();
+    for (uint child_id = threadIdx.x; child_id < psize; child_id += blockDim.x)
     {
-      uint my_index = 0;
-      cost_type LB = pinfo->costs[i * psize];
-      if (LB < UB)
+      if (my_space->feasible[child_id])
       {
-        my_index = atomicAdd(&child_index, 1);
+        uint my_index = atomicAdd(&child_index, 1);
         node_info *b = &node_space[my_addresses[my_index]];
-        b->fixed_assignments[i] = 1; // fix row i to column lvl + 1.
-        b->LB = (float)pinfo->costs[i * psize];
-        b->level = 1;
+
+        // copy fixed assignments
+        for (uint j = 0; j < psize; j++)
+          b->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
+
+        b->LB = my_space->LB[child_id];
+        b->level = my_space->level[child_id];
         a[my_index].value = b;
-        a[my_index].key = (float)pinfo->costs[i * psize];
+        a[my_index].key = my_space->LB[child_id];
       }
-      // printf("Key: %f\n", a[i].key);
     }
+
     __syncthreads();
     send_requests(BATCH_PUSH, nchild, a,
                   queue_caller(request_queue, tickets, head, tail),
                   request_queue_size, queue_space);
+    __syncthreads();
+
+    // reset my_space
+    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    {
+      my_space->LB[i] = 0;
+      my_space->feasible[i] = false;
+      my_space->level[i] = 0;
+      for (uint j = 0; j < psize; j++)
+        my_space->fixed_assignments[psize * i + j] = 0;
+    }
   }
   else
   {
@@ -76,10 +105,9 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 // Add launch bounds
 __launch_bounds__(n_threads, 2048 / n_threads)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                   uint *addresses_space, node_info *node_space, subgrad_space *subgrad_space,
-                                   const problem_info *pinfo, uint max_node_length,
+                                   node_info *node_space, subgrad_space *subgrad_space, const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                                   queue_info *queue_space, work_info *work_space, BHEAP<node> bheap,
+                                   queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
                                    bool *hold_status,
                                    const cost_type global_UB,
                                    bnb_stats *stats)
@@ -95,21 +123,22 @@ __launch_bounds__(n_threads, 2048 / n_threads)
     __shared__ uint *my_addresses;
     __shared__ int *col_fa;
     __shared__ float *lap_costs;
-
+    __shared__ worker_info *my_space;
     if (threadIdx.x == 0)
     {
-      my_addresses = &addresses_space[blockIdx.x * max_node_length];
+      my_addresses = work_space[blockIdx.x].address_space;
       // Needed for feasibility check
       col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
       lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
+      my_space = &work_space[blockIdx.x];
     }
     __shared__ GLOBAL_HANDLE<float> gh;
     __shared__ SHARED_HANDLE sh;
     __shared__ float UB;
 
     set_handles(gh, subgrad_space->T.th);
-
-    __shared__ uint popped_index;
+    __shared__ node popped_node;
+    __shared__ uint popped_index, nchild_feas, lvl;
     __shared__ bool opt_flag, overflow_flag;
     if (threadIdx.x == 0)
     {
@@ -143,141 +172,171 @@ __launch_bounds__(n_threads, 2048 / n_threads)
 
       START_TIME(TRANSFER)
       // copy from queue space to work space
-      node *a = work_space[blockIdx.x].nodes;
-
       if (threadIdx.x == 0)
       {
-        a[0] = queue_space[blockIdx.x].nodes[0];
-        a[0].value->LB = 0;
-        popped_index = a[0].value->id;
+        popped_node = queue_space[blockIdx.x].nodes[0];
+        nchild_feas = 0;
+        popped_index = popped_node.value->id;
+        UB = float(global_UB); // Reset UB
+        lvl = popped_node.value->level;
       }
       __syncthreads();
-      uint lvl = a[0].value->level;
-
-      // Reset UB
-      if (threadIdx.x == 0)
-        UB = float(global_UB);
-      __syncthreads();
-
       END_TIME(TRANSFER);
 
-      START_TIME(FEAS_CHECK);
-      // Check feasibility for budget constraints
-      __shared__ bool feasible;
-      feas_check(pinfo, a, col_fa, lap_costs, stats, feasible, gh, sh);
-      // feas_check_naive(pinfo, a, col_fa, lap_costs, stats, feasible);
+      // start branching to get children
+      __shared__ uint nfail;
+      if (threadIdx.x == 0)
+        nfail = 0;
       __syncthreads();
-
-      END_TIME(FEAS_CHECK);
-
-      if (feasible)
+      // Check feasibility and update bounds of each child
+      for (uint i = 0; i < psize - lvl; i++)
       {
-        // Update bounds of the popped node
-        START_TIME(UPDATE_LB);
-        // update_bounds(pinfo, a);
-        update_bounds_subgrad(pinfo, subgrad_space, UB, a, col_fa, gh, sh);
-        __syncthreads();
-        END_TIME(UPDATE_LB);
-
         START_TIME(BRANCH);
-        if (lvl == psize && a[0].value->LB <= global_UB)
-        {
-          if (threadIdx.x == 0)
-          {
-            printf("Optimal solution reached with cost %f\n", a[0].value->LB);
-            opt_reached.store(true, cuda::memory_order_release);
-          }
-        }
-        else if (a[0].value->LB <= global_UB)
-        {
-          if (threadIdx.x == 0)
-          {
-            atomicAdd(&stats->nodes_explored, 1);
-          }
-          // branch on popped node and copy bounds
-          get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, psize - lvl,
-                     my_addresses);
+        __shared__ node current_node;
+        __shared__ node_info current_node_info;
+        // Get popped_node info in the worker space
+        for (uint j = threadIdx.x; j < psize; j += blockDim.x)
+          my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
+        __syncthreads();
 
-          if (threadIdx.x == 0)
+        if (threadIdx.x == 0)
+        {
+          if (my_space->fixed_assignments[i * psize + i] == 0)
           {
-            if (heap_overflow.load(cuda::memory_order_relaxed))
-              overflow_flag = true;
+            my_space->fixed_assignments[i * psize + i] = lvl + 1;
           }
-          __syncthreads();
-          if (!overflow_flag)
+          else
           {
-            __shared__ uint nfail;
-            if (threadIdx.x == 0)
-              nfail = 0;
-            __syncthreads();
-            for (uint i = threadIdx.x; i < psize - lvl; i += blockDim.x)
+            uint offset = nfail;
+            nfail++;
+            // find appropriate index
+            uint prog = 0, index = psize - lvl;
+            for (uint j = psize - lvl; j < psize; j++)
             {
-              // Copy info from popped node to node space
-              node_info *b = &node_space[my_addresses[i]];
-              for (uint j = 0; j < psize; j++)
-                b->fixed_assignments[j] = a[0].value->fixed_assignments[j];
-              b->LB = a[0].value->LB;
-
-              // fix further assignments
-              if (b->fixed_assignments[i] == 0)
+              if (my_space->fixed_assignments[i * psize + j] == 0)
               {
-                b->fixed_assignments[i] = lvl + 1;
-              }
-              else
-              {
-                uint offset = atomicAdd(&nfail, 1);
-                // find appropriate index
-                uint prog = 0, index = psize - lvl;
-                for (uint j = psize - lvl; j < psize; j++)
+                if (prog == offset)
                 {
-                  if (b->fixed_assignments[j] == 0)
-                  {
-                    if (prog == offset)
-                    {
-                      index = j;
-                      break;
-                    }
-                    prog++;
-                  }
+                  index = j;
+                  break;
                 }
-                b->fixed_assignments[index] = lvl + 1;
+                prog++;
               }
-              b->level = lvl + 1;
-              a[i].value = b;
-              a[i].key = b->LB;
             }
-            __syncthreads();
-            // push children to bheap
-            // if (threadIdx.x == 0)
-            //   DLog(debug, "Pushing for block %u with bound %f\n", blockIdx.x, a[0].key);
-            // __syncthreads();
-            send_requests(BATCH_PUSH, psize - lvl, a,
-                          queue_caller(request_queue, tickets, head, tail),
-                          request_queue_size, queue_space);
+            my_space->fixed_assignments[i * psize + index] = lvl + 1;
           }
+          my_space->level[i] = lvl + 1;
+          current_node_info = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
+          current_node.value = &current_node_info;
+        }
+        __syncthreads();
+        END_TIME(BRANCH);
+        START_TIME(FEAS_CHECK);
+        feas_check(pinfo, &current_node, col_fa, lap_costs, stats, my_space->feasible[i], gh, sh);
+        __syncthreads();
+        END_TIME(FEAS_CHECK);
+        // update bounds if the child is feasible
+        if (my_space->feasible[i])
+        {
+          START_TIME(UPDATE_LB);
+          update_bounds_subgrad(pinfo, subgrad_space, UB, &current_node, col_fa, gh, sh);
+          __syncthreads();
+          END_TIME(UPDATE_LB);
+          START_TIME(BRANCH);
+          if (lvl + 1 == psize && current_node.value->LB <= global_UB)
+          {
+            if (threadIdx.x == 0)
+            {
+              printf("Optimal solution reached with cost %f\n", popped_node.value->LB);
+              opt_reached.store(true, cuda::memory_order_release);
+            }
+          }
+          else if (current_node.value->LB <= global_UB)
+          {
+            if (threadIdx.x == 0)
+            {
+              atomicAdd(&stats->nodes_explored, 1);
+              nchild_feas++;
+              my_space->feasible[i] = true;
+              my_space->LB[i] = current_node.value->LB;
+            }
+          }
+          else
+          {
+            if (threadIdx.x == 0)
+            {
+              atomicAdd(&stats->nodes_pruned_incumbent, 1);
+              my_space->feasible[i] = false;
+            }
+          }
+          END_TIME(BRANCH);
         }
         else
         {
-          // DLog(debug, "Node with key %f is pruned\n", a[0].value->LB);
+          START_TIME(BRANCH);
           if (threadIdx.x == 0)
-            atomicAdd(&stats->nodes_pruned_incumbent, 1);
+            atomicAdd(&stats->nodes_pruned_infeasible, 1);
+          __syncthreads();
+          END_TIME(BRANCH);
         }
-        END_TIME(BRANCH);
       }
       __syncthreads();
-
       START_TIME(QUEUING);
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                   popped_index);
       __syncthreads();
+      if (opt_reached.load(cuda::memory_order_relaxed))
+      {
+        if (threadIdx.x == 0)
+          opt_flag = true;
+      }
+      __syncthreads();
+
+      if (nchild_feas > 0 && !opt_flag)
+      {
+        // get nchild addresses
+        get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild_feas, my_addresses);
+
+        if (threadIdx.x == 0)
+        {
+          if (heap_overflow.load(cuda::memory_order_relaxed))
+            overflow_flag = true;
+        }
+        __syncthreads();
+        if (!overflow_flag)
+        {
+          node *a = my_space->nodes;
+          __shared__ uint index;
+          if (threadIdx.x == 0)
+            index = 0;
+          __syncthreads();
+          for (uint i = threadIdx.x; i < psize - lvl; i += blockDim.x)
+          {
+            if (my_space->feasible[i])
+            {
+              uint ind = atomicAdd(&index, 1);
+              node_info *b = &node_space[my_addresses[ind]];
+              b->LB = my_space->LB[i];
+              b->level = my_space->level[i];
+              for (uint j = 0; j < psize; j++)
+                b->fixed_assignments[j] = my_space->fixed_assignments[i * psize + j];
+              a[ind].value = b;
+              a[ind].key = my_space->LB[i];
+            }
+          }
+          __syncthreads();
+          send_requests(BATCH_PUSH, nchild_feas, a,
+                        queue_caller(request_queue, tickets, head, tail),
+                        request_queue_size, queue_space);
+        }
+        __syncthreads();
+      }
       END_TIME(QUEUING);
 
       START_TIME(INIT);
       if (threadIdx.x == 0)
       {
-        if (opt_reached.load(cuda::memory_order_relaxed))
-          opt_flag = true;
         if (heap_overflow.load(cuda::memory_order_relaxed))
           overflow_flag = true;
       }
@@ -295,14 +354,5 @@ __launch_bounds__(n_threads, 2048 / n_threads)
   if (threadIdx.x == 0)
   {
     DLog(debug, "Block %u is done\n", blockIdx.x);
-  }
-}
-
-__global__ void dummy_vector_add(const cost_type *a, uint N2)
-{
-  uint i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i < N2)
-  {
-    printf("a[%u] = %u\n", i, a[i]);
   }
 }

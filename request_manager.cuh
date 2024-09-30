@@ -387,6 +387,7 @@ __device__ bool wait_for_pop(queue_info *queue_space)
     if (pop_status == INVALID && first_invalid)
     {
       START_TIME(WAITING_UNDERFLOW);
+      __syncthreads();
       if (threadIdx.x == 0)
       {
         // DLog(debug, "Block %u's pop request was invalid\n", blockIdx.x);

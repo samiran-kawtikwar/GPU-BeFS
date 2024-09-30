@@ -75,6 +75,8 @@ struct node_info
   float LB;
   uint level;
   uint id; // For mapping with memory queue; DON'T UPDATE
+  __host__ __device__ node_info() {};
+  __host__ __device__ node_info(int *fa, float lb, uint lvl, uint address = 0) : fixed_assignments(fa), LB(lb), level(lvl), id(address) {};
 };
 
 struct node
@@ -96,16 +98,54 @@ struct d_instruction
 struct queue_info
 {
   TaskType type;
-  node nodes[100];
+  node nodes[MAX_TOKENS];
   uint batch_size;                                              // For batch push
   cuda::atomic<uint32_t, cuda::thread_scope_device> req_status; // 0 done 1 pending 2 invalid
   uint id;                                                      // For mapping with request queue; DON'T UPDATE
 };
 
-struct work_info
+struct worker_info
 {
-  uint batch_size;
-  node nodes[100];
+  node nodes[MAX_TOKENS];
+  float LB[MAX_TOKENS];
+  uint level[MAX_TOKENS];
+  bool feasible[MAX_TOKENS];
+  int *fixed_assignments; // To temporarily store fixed assignments
+  uint *address_space;    // To temporarily store dequeued addresses
+
+  static void allocate_all(worker_info *d_worker_space, size_t nworkers, size_t psize)
+  {
+    for (size_t i = 0; i < nworkers; i++)
+    {
+      d_worker_space[i].allocate(psize);
+    }
+  }
+
+  // Static function to free memory for an array of work_info instances
+  static void free_all(worker_info *d_worker_space, size_t nworkers)
+  {
+    for (size_t i = 0; i < nworkers; i++)
+    {
+      d_worker_space[i].free();
+    }
+  }
+  // Function to allocate memory for this instance
+  void allocate(size_t psize)
+  {
+    CUDA_RUNTIME(cudaMalloc((void **)&fixed_assignments, psize * psize * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&address_space, psize * sizeof(uint)));
+    CUDA_RUNTIME(cudaMemset(fixed_assignments, 0, psize * psize * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(address_space, 0, psize * sizeof(uint)));
+  }
+  // Function to free allocated memory for this instance
+  void free()
+  {
+    if (fixed_assignments && address_space)
+    {
+      CUDA_RUNTIME(cudaFree(fixed_assignments));
+      CUDA_RUNTIME(cudaFree(address_space));
+    }
+  }
 };
 
 struct bnb_stats

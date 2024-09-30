@@ -62,7 +62,6 @@ int main(int argc, char **argv)
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
   // print time
   Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
-
   // print(h_problem_info, true, true, false);
 
   // Copy problem info to device
@@ -113,11 +112,11 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
   delete[] h_queue_space;
 
-  // Create space for bound computation and branching
+  // Create space for bound computation storing and branching
   Log(debug, "Creating space for subgrad solver");
-  work_info *d_work_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_work_space, nworkers * sizeof(work_info)));
-  CUDA_RUNTIME(cudaMemset((void *)d_work_space, 0, nworkers * sizeof(work_info)));
+  worker_info *d_worker_space;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
+  worker_info::allocate_all(d_worker_space, nworkers, psize);
 
   subgrad_space *d_subgrad_space;
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nworkers * sizeof(subgrad_space)));
@@ -132,23 +131,16 @@ int main(int argc, char **argv)
   queue_declare(request_queue, tickets, head, tail);
   queue_init(request_queue, tickets, head, tail, nworkers, dev_);
 
-  // Create space for node_info and addresses
-  size_t max_node_length = min(MAX_TOKENS, psize); // To be changed later -- equals problem size
-  node_info *d_node_space;
-
-  uint *d_address_space; // To store dequeued addresses
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_address_space, nworkers * max_node_length * sizeof(uint)));
-  CUDA_RUNTIME(cudaMemset((void *)d_address_space, 0, nworkers * max_node_length * sizeof(uint)));
-
   // Get memory queue length based on available memory
   size_t free, total;
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = (free * 0.05) / memory_queue_weight; // Keeping 5% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
-  // space for node_info
+  // Create space for node_info
+  node_info *d_node_space;
   CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * sizeof(node_info)));
   CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * sizeof(node_info)));
   // space for fixed assignments in node_info
@@ -190,18 +182,16 @@ int main(int argc, char **argv)
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_address_space, d_node_space,
-             d_problem_info, max_node_length,
+             d_node_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
-             d_queue_space, d_work_space, d_bheap, d_hold_status,
-             UB);
+             d_queue_space, d_worker_space, d_bheap,
+             d_hold_status, UB);
   cuProfilerStart();
   execKernel(branch_n_bound, nworkers, n_threads, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_address_space, d_node_space, d_subgrad_space,
-             d_problem_info, max_node_length,
+             d_node_space, d_subgrad_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
-             d_queue_space, d_work_space, d_bheap,
+             d_queue_space, d_worker_space, d_bheap,
              d_hold_status,
              UB, stats);
   cuProfilerStop();
@@ -228,8 +218,6 @@ int main(int argc, char **argv)
   d_bheap.free_memory();
   CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
-  CUDA_RUNTIME(cudaFree(d_address_space));
-  CUDA_RUNTIME(cudaFree(d_work_space));
   CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
   CUDA_RUNTIME(cudaFree(d_problem_info->costs));
@@ -237,7 +225,10 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
   CUDA_RUNTIME(cudaFree(d_problem_info));
   CUDA_RUNTIME(cudaFree(d_hold_status));
+  worker_info::free_all(d_worker_space, nworkers);
+  CUDA_RUNTIME(cudaFree(d_worker_space));
   d_subgrad_space->clear();
+  CUDA_RUNTIME(cudaFree(d_subgrad_space));
 
   delete[] h_problem_info->costs;
   delete[] h_problem_info->weights;

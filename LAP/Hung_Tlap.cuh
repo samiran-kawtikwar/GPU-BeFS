@@ -14,8 +14,6 @@ private:
   int dev_, maxtile;
   size_t size_, h_nrows, h_ncols;
   cost_type *Tcost_;
-  uint num_blocks_4;
-  // uint num_blocks_reduction;
 
 public:
   // Blank constructor
@@ -61,19 +59,19 @@ public:
     CUDA_RUNTIME(cudaMalloc((void **)&th.cover_column, maxtile * h_ncols * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.column_of_prime_at_row, maxtile * h_nrows * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.row_of_green_at_column, maxtile * h_ncols * sizeof(int)));
-
-    // CUDA_RUNTIME(cudaMalloc((void **)&th.d_min_in_mat_vect, maxtile * num_blocks_reduction * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.d_min_in_mat, maxtile * 1 * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.min_in_rows, maxtile * h_nrows * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.min_in_cols, maxtile * h_ncols * sizeof(cost_type)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.row_of_star_at_column, maxtile * h_ncols * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&th.objective, maxtile * 1 * sizeof(cost_type)));
-    // CUDA_RUNTIME(cudaMalloc((void **)&th.tail, 1 * sizeof(uint)));
-    // CUDA_RUNTIME(cudaMemset(th.tail, 0, sizeof(uint)));
 
     if (th.memoryloc == INTERNAL)
     {
       Log(info, "Allocating internal memory for %d problems", nproblem);
     }
+  }
+  void clear()
+  {
+    th.clear();
   }
 };
