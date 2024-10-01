@@ -48,7 +48,7 @@ fundef void calc_col_min(GLOBAL_HANDLE<data> &gh) // with single block
       i += (size_t)blockDim.x * SIZE;
     }
     __syncthreads();
-    typedef cub::BlockReduce<data, n_threads> BR;
+    typedef cub::BlockReduce<data, BlockSize> BR;
     __shared__ typename BR::TempStorage temp_storage;
     thread_min = BR(temp_storage).Reduce(thread_min, cub::Min());
     if (threadIdx.x == 0)
@@ -72,7 +72,7 @@ fundef void col_sub(GLOBAL_HANDLE<data> &gh) // with single block
 fundef void calc_row_min(GLOBAL_HANDLE<data> &gh) // with single block
 {
 
-  typedef cub::BlockReduce<data, n_threads> BR;
+  typedef cub::BlockReduce<data, BlockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
   // size_t i = (size_t)blockIdx.x * SIZE + (size_t)threadIdx.x;
   for (size_t row = 0; row < SIZE; row++)
@@ -257,7 +257,7 @@ fundef void step_4(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh)
   } while (s_found && !sh.goto_5);
 }
 
-template <typename data = float, uint blockSize = n_threads>
+template <typename data = float, uint blockSize = BlockSize>
 __forceinline__ __device__ void min_reduce_kernel1(GLOBAL_HANDLE<data> &gh)
 {
   data myval = MAX_DATA;
@@ -423,7 +423,7 @@ fundef void step_6_add_sub_fused_compress_matrix(GLOBAL_HANDLE<data> &gh, SHARED
 
 fundef void get_objective(GLOBAL_HANDLE<data> &gh)
 {
-  typedef cub::BlockReduce<data, n_threads> BR;
+  typedef cub::BlockReduce<data, BlockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
   data obj = 0;
   for (uint c = threadIdx.x; c < SIZE; c += blockDim.x)
@@ -506,7 +506,7 @@ fundef void BHA(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, const uint problemID
       START_TIME(STEP6);
       __syncthreads();
 
-      min_reduce_kernel1<data, n_threads>(gh);
+      min_reduce_kernel1<data, BlockSize>(gh);
       __syncthreads();
 
       if (__DEBUG__D)
@@ -605,7 +605,7 @@ fundef void BHA_fa(GLOBAL_HANDLE<data> &gh, SHARED_HANDLE &sh, int *row_fa, int 
 template <typename data = float>
 __forceinline__ __device__ void get_objective_block(GLOBAL_HANDLE<data> &gh, const data *cost = nullptr)
 {
-  typedef cub::BlockReduce<data, n_threads> BR;
+  typedef cub::BlockReduce<data, BlockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
   data obj = 0;
   if (cost == nullptr)

@@ -89,7 +89,7 @@ int main(int argc, char **argv)
   // Create space for queue
   int nworkers; // equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads, 0);
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   Log(debug, "Number of SMs: %d", deviceProp.multiProcessorCount);
   nworkers *= deviceProp.multiProcessorCount;
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
   d_subgrad_space->allocate(psize, ncommodities, nworkers, dev_);
 
   // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, n_threads, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
   // printf("Exiting...\n");
   // exit(0);
 
@@ -149,9 +149,9 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemset((void *)d_fixed_assignment_space, 0, memory_queue_len * psize * sizeof(int)));
 
   // Set fixed assignment pointers to d_fixed_assignment_space
-  uint block_dimension = 1024;
-  uint grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (memory_queue_len - 1) / block_dimension + 1);
-  execKernel(set_fixed_assignment_pointers, grid_dimension, block_dimension, dev_, true,
+  uint BlockSizeension = 1024;
+  uint grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (memory_queue_len - 1) / BlockSizeension + 1);
+  execKernel(set_fixed_assignment_pointers, grid_dimension, BlockSizeension, dev_, true,
              d_node_space, d_fixed_assignment_space, psize, memory_queue_len);
 
   // create space for hold_status
@@ -180,14 +180,14 @@ int main(int argc, char **argv)
              memory_queue_len);
 
   // Frist kernel to create L1 nodes
-  execKernel(initial_branching, 2, n_threads, dev_, true,
+  execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
   cuProfilerStart();
-  execKernel(branch_n_bound, nworkers, n_threads, dev_, true,
+  execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, d_subgrad_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,

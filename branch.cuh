@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cooperative_groups.h>
 #include "utils/cuda_utils.cuh"
 #include "memory_manager.cuh"
 #include "request_manager.cuh"
@@ -8,6 +9,8 @@
 #include "RCAP/rcap_kernels.cuh"
 
 #include "LAP/Hung_Tlap.cuh"
+
+namespace cg = cooperative_groups;
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   node_info *node_space, const problem_info *pinfo,
@@ -21,23 +24,30 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     uint *my_addresses = work_space[bId].address_space;
     worker_info *my_space = &work_space[bId];
     __shared__ uint nchild, child_index;
+
     if (threadIdx.x == 0)
     {
       nchild = 0;
       child_index = 0;
     }
     __syncthreads();
+
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<TileSize> tile = cg::tiled_partition<TileSize>(block);
+    const uint tile_id = tile.meta_group_rank();
+    const uint local_id = tile.thread_rank();
+
     // get nchildren and their bounds
-    for (uint child_id = 0; child_id < psize; child_id++)
+    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
     {
-      if (threadIdx.x == 0)
+      if (local_id == 0)
       {
         my_space->fixed_assignments[psize * child_id + child_id] = 1;
         my_space->level[child_id] = 1;
         my_space->LB[child_id] = (float)pinfo->costs[child_id * psize];
       }
-      __syncthreads();
-      if (threadIdx.x == 0)
+      tile.sync();
+      if (local_id == 0)
       {
         if (my_space->LB[child_id] < UB)
         {
@@ -57,21 +67,26 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     // construct a for sending to queue
     node *a = work_space[bId].nodes;
     __syncthreads();
-    for (uint child_id = threadIdx.x; child_id < psize; child_id += blockDim.x)
+
+    __shared__ node_info *b[TilesPerBlock];
+    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
     {
       if (my_space->feasible[child_id])
       {
-        uint my_index = atomicAdd(&child_index, 1);
-        node_info *b = &node_space[my_addresses[my_index]];
-
+        if (local_id == 0)
+        {
+          uint my_index = atomicAdd(&child_index, 1);
+          b[tile_id] = &node_space[my_addresses[my_index]];
+          b[tile_id]->LB = my_space->LB[child_id];
+          b[tile_id]->level = my_space->level[child_id];
+          a[my_index].value = b[tile_id];
+          a[my_index].key = my_space->LB[child_id];
+        }
+        tile.sync();
         // copy fixed assignments
-        for (uint j = 0; j < psize; j++)
-          b->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
-
-        b->LB = my_space->LB[child_id];
-        b->level = my_space->level[child_id];
-        a[my_index].value = b;
-        a[my_index].key = my_space->LB[child_id];
+        for (uint j = local_id; j < psize; j += TileSize)
+          b[tile_id]->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
+        tile.sync();
       }
     }
 
@@ -82,12 +97,15 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     __syncthreads();
 
     // reset my_space
-    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    for (uint i = tile_id; i < psize; i += TilesPerBlock)
     {
-      my_space->LB[i] = 0;
-      my_space->feasible[i] = false;
-      my_space->level[i] = 0;
-      for (uint j = 0; j < psize; j++)
+      if (local_id == 0)
+      {
+        my_space->LB[i] = 0;
+        my_space->feasible[i] = false;
+        my_space->level[i] = 0;
+      }
+      for (uint j = local_id; j < psize; j += TileSize)
         my_space->fixed_assignments[psize * i + j] = 0;
     }
   }
@@ -103,7 +121,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
   }
 }
 // Add launch bounds
-__launch_bounds__(n_threads, 2048 / n_threads)
+__launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                    node_info *node_space, subgrad_space *subgrad_space, const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,

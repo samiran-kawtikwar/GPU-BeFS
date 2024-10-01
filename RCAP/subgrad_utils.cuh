@@ -81,7 +81,7 @@ __device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,
                                           float &denom, float &feas,
                                           const problem_info *pinfo, const uint N, const uint K)
 {
-  typedef cub::BlockReduce<float, n_threads> BR;
+  typedef cub::BlockReduce<float, BlockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
   for (int k = 0; k < K; k++)
   {
@@ -126,7 +126,7 @@ __device__ __forceinline__ float round_to(float val, int places)
 
 __device__ __forceinline__ void get_LB(float *LB, float &max_LB)
 {
-  typedef cub::BlockReduce<float, n_threads> BR;
+  typedef cub::BlockReduce<float, BlockSize> BR;
   __shared__ typename BR::TempStorage temp_storage;
   float val = 0;
   for (size_t i = threadIdx.x; i < MAX_ITER; i += blockDim.x)
