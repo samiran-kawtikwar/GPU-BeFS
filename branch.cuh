@@ -138,10 +138,10 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
     INIT_TIME(lap_counters);
     START_TIME(INIT);
 
-    __shared__ uint *my_addresses;
-    __shared__ int *col_fa;
-    __shared__ float *lap_costs;
-    __shared__ worker_info *my_space;
+    __shared__ uint *my_addresses;    // Ownership: Block
+    __shared__ int *col_fa;           // Ownership: Tile
+    __shared__ float *lap_costs;      // Ownership: Tile
+    __shared__ worker_info *my_space; // Ownership: Block
     if (threadIdx.x == 0)
     {
       my_addresses = work_space[blockIdx.x].address_space;
@@ -150,14 +150,14 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
       my_space = &work_space[blockIdx.x];
     }
-    __shared__ GLOBAL_HANDLE<float> gh;
-    __shared__ SHARED_HANDLE sh;
-    __shared__ float UB;
+    __shared__ GLOBAL_HANDLE<float> gh; // needed for LAP. ownership: Tile
+    __shared__ SHARED_HANDLE sh;        // needed for LAP, ownership: Tile
+    __shared__ float UB;                // needed for subgradient, ownership: Tile
 
     set_handles(gh, subgrad_space->T.th);
-    __shared__ node popped_node;
-    __shared__ uint popped_index, nchild_feas, lvl;
-    __shared__ bool opt_flag, overflow_flag;
+    __shared__ node popped_node;                    // Ownership: Block
+    __shared__ uint popped_index, nchild_feas, lvl; // Ownership: Block
+    __shared__ bool opt_flag, overflow_flag;        // Ownership: Tile
     if (threadIdx.x == 0)
     {
       opt_flag = false;
@@ -202,7 +202,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       END_TIME(TRANSFER);
 
       // start branching to get children
-      __shared__ uint nfail;
+      __shared__ uint nfail; // Ownership: Tile
       if (threadIdx.x == 0)
         nfail = 0;
       __syncthreads();
@@ -210,8 +210,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       for (uint i = 0; i < psize - lvl; i++)
       {
         START_TIME(BRANCH);
-        __shared__ node current_node;
-        __shared__ node_info current_node_info;
+        __shared__ node current_node;           // Ownership: Tile
+        __shared__ node_info current_node_info; // Ownership: Tile
         // Get popped_node info in the worker space
         for (uint j = threadIdx.x; j < psize; j += blockDim.x)
           my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
@@ -325,7 +325,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         if (!overflow_flag)
         {
           node *a = my_space->nodes;
-          __shared__ uint index;
+          __shared__ uint index; // Ownership: Block
           if (threadIdx.x == 0)
             index = 0;
           __syncthreads();
