@@ -149,9 +149,9 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemset((void *)d_fixed_assignment_space, 0, memory_queue_len * psize * sizeof(int)));
 
   // Set fixed assignment pointers to d_fixed_assignment_space
-  uint BlockSizeension = 1024;
-  uint grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (memory_queue_len - 1) / BlockSizeension + 1);
-  execKernel(set_fixed_assignment_pointers, grid_dimension, BlockSizeension, dev_, true,
+  uint block_dimension = 1024;
+  uint grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (memory_queue_len - 1) / block_dimension + 1);
+  execKernel(set_fixed_assignment_pointers, grid_dimension, block_dimension, dev_, true,
              d_node_space, d_fixed_assignment_space, psize, memory_queue_len);
 
   // create space for hold_status
