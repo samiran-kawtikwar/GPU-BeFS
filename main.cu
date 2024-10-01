@@ -176,7 +176,7 @@ int main(int argc, char **argv)
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
 
   // Populate memory queue and node_space IDs
-  execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true,
+  execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_node_space,
              memory_queue_len);
 
