@@ -145,7 +145,7 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
 
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)
 {
-  PARTITION_HANDLE<float> ph;
+  __shared__ PARTITION_HANDLE<float> ph;
   cg::thread_block block = cg::this_thread_block();
   TILE tile = cg::tiled_partition<TileSize>(block);
 
