@@ -48,97 +48,91 @@ struct subgrad_space
 };
 
 // Solve subgradient with a block
-__device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *space, float &UB,
-                                     int *row_fa, int *col_fa,
-                                     GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
+__device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
+                                    subgrad_space *space, float &UB,
+                                    int *row_fa, int *col_fa,
+                                    PARTITION_HANDLE<float> &ph)
 {
   const uint N = pinfo->psize, K = pinfo->ncommodities;
-  __shared__ float *mult, *g, *lap_costs, *LB, *real_obj;
-  __shared__ int *X;
-  if (threadIdx.x == 0)
-  {
-    mult = &space->mult[blockIdx.x * K];
-    g = &space->g[blockIdx.x * K];
-    lap_costs = &space->lap_costs[blockIdx.x * N * N];
-    LB = &space->LB[blockIdx.x * MAX_ITER];
-    real_obj = &space->real_obj[blockIdx.x];
-    X = &space->X[blockIdx.x * N * N];
-  }
-  __shared__ float lrate, denom, feas, neg;
-  __shared__ bool restart, terminate;
-  __shared__ uint t;
-  __syncthreads();
+  const uint tile_id = tile.meta_group_rank();
+  const uint worker_id = blockIdx.x * TilesPerBlock + tile_id;
+  float *mult, *g, *lap_costs, *LB, *real_obj;
+  int *X;
+
+  mult = &space->mult[worker_id * K];
+  g = &space->g[worker_id * K];
+  lap_costs = &space->lap_costs[worker_id * N * N];
+  LB = &space->LB[worker_id * MAX_ITER];
+  real_obj = &space->real_obj[worker_id];
+  X = &space->X[worker_id * N * N];
+
+  __shared__ float lrate[TilesPerBlock], denom[TilesPerBlock], feas[TilesPerBlock], neg[TilesPerBlock];
+  __shared__ bool restart[TilesPerBlock], terminate[TilesPerBlock];
+  __shared__ uint t[TilesPerBlock];
+  tile.sync();
 
   // Initialize
-  init(mult, g, LB,
-       restart, terminate, lrate, t, K);
+  init(tile, mult, g, LB,
+       restart[tile_id], terminate[tile_id], lrate[tile_id], t[tile_id], K);
 
-  gh.cost = lap_costs;
+  if (tile.thread_rank() == 0)
+    ph.cost = lap_costs;
+  tile.sync();
 
-  while (t < MAX_ITER)
+  while (t[tile_id] < MAX_ITER)
   {
-    reset(g, mult, denom, feas, neg, restart, K);
+    reset(tile, g, mult, denom[tile_id], feas[tile_id], neg[tile_id], restart[tile_id], K);
 
-    update_lap_costs(lap_costs, pinfo, mult, neg, N, K);
-    // print lap_costs
-    // if (threadIdx.x == 0)
-    // {
-    //   for (size_t i = 0; i < N; i++)
-    //   {
-    //     for (size_t j = 0; j < N; j++)
-    //     {
-    //       printf("%.2f ", lap_costs[i * N + j]);
-    //     }
-    //     printf("\n");
-    //   }
-    // }
-    // __syncthreads();
+    update_lap_costs(tile, lap_costs, pinfo,
+                     mult, neg[tile_id],
+                     N, K);
 
     // Solve the LAP
-    BHA_fa<float>(gh, sh, row_fa, col_fa);
+    PHA_fa<float>(tile, ph, row_fa, col_fa);
 
-    get_objective_block(gh);
+    get_objective(tile, ph);
 
-    if (threadIdx.x == 0)
-      LB[t] = gh.objective[0] - neg;
-    __syncthreads();
+    if (tile.thread_rank() == 0)
+      LB[t[tile_id]] = ph.objective[0] - neg[tile_id];
+    tile.sync();
 
-    get_X(gh, X);
+    get_X(tile, ph, X);
 
     // Find the difference between the sum of the costs and the budgets
-    get_denom(g, real_obj, X, denom, feas,
-              pinfo, N, K);
+    get_denom(pinfo, tile, g, real_obj, X, denom[tile_id],
+              feas[tile_id], N, K);
 
-    check_feasibility(pinfo, gh, LB[t], terminate, feas);
-    if (terminate)
+    check_feasibility(pinfo, tile, ph, terminate[tile_id], feas[tile_id]);
+    if (terminate[tile_id])
       break;
 
     // Update multipliers according to subgradient rule
-    update_mult(mult, g, lrate, denom, LB[t], UB, K);
+    update_mult(tile, mult, g, lrate[tile_id],
+                denom[tile_id], LB[t[tile_id]], UB, K);
 
-    if (threadIdx.x == 0)
+    if (tile.thread_rank() == 0)
     {
       // DLog(info, "Iteration %d, LB: %.3f, UB: %.3f, lrate: %.3f, Infeasibility: %.3f\n", t, LB[t], UB, lrate, feas);
-      if ((t > 0 && t < 5 && LB[t] < LB[t - 1]) || LB[t] < 0)
+      if ((t[tile_id] > 0 && t[tile_id] < 5 && LB[t[tile_id]] < LB[t[tile_id] - 1]) || LB[t[tile_id]] < 0)
       {
         // DLog(debug, "Initial Step size too large, restart with smaller step size\n");
-        lrate /= 2;
-        t = 0;
-        restart = true;
+        lrate[tile_id] /= 2;
+        t[tile_id] = 0;
+        restart[tile_id] = true;
       }
-      if ((t + 1) % 5 == 0 && LB[t] <= LB[t - 4])
-        lrate /= 2;
-      if (lrate < 0.005)
-        terminate = true;
-      t++;
+      if ((t[tile_id] + 1) % 5 == 0 && LB[t[tile_id]] <= LB[t[tile_id] - 4])
+        lrate[tile_id] /= 2;
+      if (lrate[tile_id] < 0.005)
+        terminate[tile_id] = true;
+      t[tile_id]++;
     }
-    __syncthreads();
-    if (terminate)
+    tile.sync();
+    if (terminate[tile_id])
       break;
   }
-  __syncthreads();
+  tile.sync();
   // Use cub to take the max of the LB array
-  get_LB(LB, space->max_LB[blockIdx.x]);
+  get_LB(tile, LB, space->max_LB[worker_id]);
 
   // if (threadIdx.x == 0)
   // {
@@ -146,13 +140,15 @@ __device__ void subgrad_solver_block(const problem_info *pinfo, subgrad_space *s
   //   DLog(info, "Max LB: %.3f\n", space->max_LB[blockIdx.x]);
   //   DLog(info, "Subgrad Solver Gap: %.3f%%\n", (UB - space->max_LB[blockIdx.x]) * 100 / UB);
   // }
-  __syncthreads();
+  tile.sync();
 }
 
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)
 {
-  GLOBAL_HANDLE<float> gh;
-  __shared__ SHARED_HANDLE sh;
-  set_handles(gh, space->T.th);
-  subgrad_solver_block(pinfo, space, UB, nullptr, nullptr, gh, sh);
+  PARTITION_HANDLE<float> ph;
+  cg::thread_block block = cg::this_thread_block();
+  TILE tile = cg::tiled_partition<TileSize>(block);
+
+  set_handles(tile, ph, space->T.th);
+  subgrad_solver_tile(pinfo, tile, space, UB, nullptr, nullptr, ph);
 }

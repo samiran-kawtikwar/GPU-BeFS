@@ -96,8 +96,8 @@ int main(int argc, char **argv)
 
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
-  Log(debug, "Max potential block size: %d", nb1);
-  Log(debug, "Max potential grid size: %d", nw1);
+  Log(info, "Max potential block size: %d", nb1);
+  Log(info, "Max potential grid size: %d", nw1);
 
   // Create space for bound computation storing and branching
   Log(debug, "Creating scratch space for workers");
@@ -107,8 +107,8 @@ int main(int argc, char **argv)
 
   Log(debug, "Creating space for subgrad solver");
   subgrad_space *d_subgrad_space; // managed by each subworker
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nworkers * sizeof(subgrad_space)));
-  d_subgrad_space->allocate(psize, ncommodities, nworkers, dev_);
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nsubworkers * nworkers * sizeof(subgrad_space)));
+  d_subgrad_space->allocate(psize, ncommodities, nsubworkers * nworkers, dev_);
 
   // Call subgrad_solver Block
   // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
@@ -137,7 +137,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = (free * 0.15) / memory_queue_weight; // Keeping 5% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create space for node_info

@@ -120,6 +120,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     }
   }
 }
+
 // Add launch bounds
 __launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
@@ -134,30 +135,38 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
 
   if (blockIdx.x > 0)
   {
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<TileSize> tile = cg::tiled_partition<TileSize>(block);
+    const uint tile_id = tile.meta_group_rank();
+    const uint local_id = tile.thread_rank();
+
     INIT_TIME(counters);
     INIT_TIME(lap_counters);
     START_TIME(INIT);
 
-    __shared__ uint *my_addresses;    // Ownership: Block
-    __shared__ int *col_fa;           // Ownership: Tile
-    __shared__ float *lap_costs;      // Ownership: Tile
-    __shared__ worker_info *my_space; // Ownership: Block
-    if (threadIdx.x == 0)
+    __shared__ uint *my_addresses;              // Ownership: Block
+    __shared__ worker_info *my_space;           // Ownership: Block
+    __shared__ int *col_fa[TilesPerBlock];      // Ownership: Tile
+    __shared__ float *lap_costs[TilesPerBlock]; // Ownership: Tile
+    if (local_id == 0)
     {
-      my_addresses = work_space[blockIdx.x].address_space;
+      if (threadIdx.x == 0)
+      {
+        my_addresses = work_space[blockIdx.x].address_space;
+        my_space = &work_space[blockIdx.x];
+      }
       // Needed for feasibility check
-      col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
-      lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
-      my_space = &work_space[blockIdx.x];
+      col_fa[tile_id] = &subgrad_space->col_fixed_assignments[(blockIdx.x * TilesPerBlock + tile_id) * psize];
+      lap_costs[tile_id] = &subgrad_space->lap_costs[(blockIdx.x * TilesPerBlock + tile_id) * psize * psize]; // subgradient always works with floats
     }
-    __shared__ GLOBAL_HANDLE<float> gh; // needed for LAP. ownership: Tile
-    __shared__ SHARED_HANDLE sh;        // needed for LAP, ownership: Tile
-    __shared__ float UB;                // needed for subgradient, ownership: Tile
+    __shared__ PARTITION_HANDLE<float> ph[TilesPerBlock]; // needed for LAP. ownership: Tile
+    __shared__ float UB[TilesPerBlock];                   // needed for subgradient, ownership: Tile
 
-    set_handles(gh, subgrad_space->T.th);
-    __shared__ node popped_node;                    // Ownership: Block
-    __shared__ uint popped_index, nchild_feas, lvl; // Ownership: Block
-    __shared__ bool opt_flag, overflow_flag;        // Ownership: Tile
+    set_handles(tile, ph[tile_id], subgrad_space->T.th);
+    __shared__ node popped_node;                           // Ownership: Block
+    __shared__ uint popped_index, nchild_feas, lvl, nfail; // Ownership: Block
+    __shared__ bool opt_flag, overflow_flag;               // Ownership: Block
+
     if (threadIdx.x == 0)
     {
       opt_flag = false;
@@ -182,7 +191,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       END_TIME(QUEUING);
 
       START_TIME(WAITING);
-      // Wait for POP to be done
+      // Wait for POP to be done  -- Entire block waits
       if (wait_for_pop(queue_space) == false)
         break;
 
@@ -195,29 +204,29 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         popped_node = queue_space[blockIdx.x].nodes[0];
         nchild_feas = 0;
         popped_index = popped_node.value->id;
-        UB = float(global_UB); // Reset UB
         lvl = popped_node.value->level;
       }
+      if (local_id == 0)
+        UB[tile_id] = float(global_UB); // Reset UB
       __syncthreads();
       END_TIME(TRANSFER);
 
       // start branching to get children
-      __shared__ uint nfail; // Ownership: Tile
       if (threadIdx.x == 0)
-        nfail = 0;
+        nfail = 0; // Owned by Block
       __syncthreads();
       // Check feasibility and update bounds of each child
-      for (uint i = 0; i < psize - lvl; i++)
+      __shared__ node current_node[TilesPerBlock];           // Ownership: Tile
+      __shared__ node_info current_node_info[TilesPerBlock]; // Ownership: Tile
+      for (uint i = tile_id; i < psize - lvl; i += TilesPerBlock)
       {
         START_TIME(BRANCH);
-        __shared__ node current_node;           // Ownership: Tile
-        __shared__ node_info current_node_info; // Ownership: Tile
         // Get popped_node info in the worker space
-        for (uint j = threadIdx.x; j < psize; j += blockDim.x)
+        for (uint j = local_id; j < psize; j += TileSize)
           my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
-        __syncthreads();
+        tile.sync();
 
-        if (threadIdx.x == 0)
+        if (local_id == 0)
         {
           if (my_space->fixed_assignments[i * psize + i] == 0)
           {
@@ -225,8 +234,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           }
           else
           {
-            uint offset = nfail;
-            nfail++;
+            uint offset = atomicAdd(&nfail, 1);
             // find appropriate index
             uint prog = 0, index = psize - lvl;
             for (uint j = psize - lvl; j < psize; j++)
@@ -244,44 +252,49 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             my_space->fixed_assignments[i * psize + index] = lvl + 1;
           }
           my_space->level[i] = lvl + 1;
-          current_node_info = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
-          current_node.value = &current_node_info;
+          current_node_info[tile_id] = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
+          current_node[tile_id].value = &current_node_info[tile_id];
         }
-        __syncthreads();
+        tile.sync();
         END_TIME(BRANCH);
         START_TIME(FEAS_CHECK);
-        feas_check(pinfo, &current_node, col_fa, lap_costs, stats, my_space->feasible[i], gh, sh);
-        __syncthreads();
+        feas_check(pinfo, tile,
+                   &current_node[tile_id], col_fa[tile_id],
+                   lap_costs[tile_id], stats, my_space->feasible[i],
+                   ph[tile_id]);
+
+        tile.sync();
         END_TIME(FEAS_CHECK);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
           START_TIME(UPDATE_LB);
-          update_bounds_subgrad(pinfo, subgrad_space, UB, &current_node, col_fa, gh, sh);
-          __syncthreads();
+          update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
+                                &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
+          tile.sync();
           END_TIME(UPDATE_LB);
           START_TIME(BRANCH);
-          if (lvl + 1 == psize && current_node.value->LB <= global_UB)
+          if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               printf("Optimal solution reached with cost %f\n", popped_node.value->LB);
               opt_reached.store(true, cuda::memory_order_release);
             }
           }
-          else if (current_node.value->LB <= global_UB)
+          else if (current_node[tile_id].value->LB <= global_UB)
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               atomicAdd(&stats->nodes_explored, 1);
-              nchild_feas++;
+              atomicAdd(&nchild_feas, 1);
               my_space->feasible[i] = true;
-              my_space->LB[i] = current_node.value->LB;
+              my_space->LB[i] = current_node[tile_id].value->LB;
             }
           }
           else
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               atomicAdd(&stats->nodes_pruned_incumbent, 1);
               my_space->feasible[i] = false;
@@ -292,9 +305,9 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         else
         {
           START_TIME(BRANCH);
-          if (threadIdx.x == 0)
+          if (local_id == 0)
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
-          __syncthreads();
+          tile.sync();
           END_TIME(BRANCH);
         }
       }
