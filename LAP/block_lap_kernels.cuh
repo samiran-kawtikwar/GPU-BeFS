@@ -552,7 +552,7 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
       min_reduce_kernel1(tile, SIZE * SIZE, ph);
       tile.sync();
 
-      if (__DEBUG__D)
+#if __DEBUG__D == true
       {
         if (ph.d_min_in_mat[0] <= eps)
         {
@@ -585,6 +585,7 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
         }
         tile.sync();
       }
+#endif
 
       step_6_init(tile, ph); // Also does dual update
       tile.sync();
