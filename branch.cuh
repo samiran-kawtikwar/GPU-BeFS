@@ -218,9 +218,9 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       // Check feasibility and update bounds of each child
       __shared__ node current_node[TilesPerBlock];           // Ownership: Tile
       __shared__ node_info current_node_info[TilesPerBlock]; // Ownership: Tile
+      START_TIME(UPDATE_LB);
       for (uint i = tile_id; i < psize - lvl; i += TilesPerBlock)
       {
-        START_TIME(BRANCH);
         // Get popped_node info in the worker space
         for (uint j = local_id; j < psize; j += TileSize)
           my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
@@ -256,24 +256,19 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           current_node[tile_id].value = &current_node_info[tile_id];
         }
         tile.sync();
-        END_TIME(BRANCH);
-        START_TIME(FEAS_CHECK);
         feas_check(pinfo, tile,
                    &current_node[tile_id], col_fa[tile_id],
                    lap_costs[tile_id], stats, my_space->feasible[i],
                    ph[tile_id]);
 
         tile.sync();
-        END_TIME(FEAS_CHECK);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
-          START_TIME(UPDATE_LB);
           update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
                                 &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
           tile.sync();
-          END_TIME(UPDATE_LB);
-          START_TIME(BRANCH);
+
           if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
           {
             if (local_id == 0)
@@ -300,18 +295,16 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
               my_space->feasible[i] = false;
             }
           }
-          END_TIME(BRANCH);
         }
         else
         {
-          START_TIME(BRANCH);
           if (local_id == 0)
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
           tile.sync();
-          END_TIME(BRANCH);
         }
       }
       __syncthreads();
+      END_TIME(UPDATE_LB);
       START_TIME(QUEUING);
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
@@ -361,8 +354,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                         queue_caller(request_queue, tickets, head, tail),
                         request_queue_size, queue_space);
         }
-        __syncthreads();
       }
+      __syncthreads();
       END_TIME(QUEUING);
 
       START_TIME(INIT);

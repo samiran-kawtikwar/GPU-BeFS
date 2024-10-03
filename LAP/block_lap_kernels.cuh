@@ -482,15 +482,13 @@ fundef void get_objective(TILE tile, PARTITION_HANDLE<data> &ph)
 
 fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = blockIdx.x)
 {
-  START_TIME(STEP1);
   init(tile, ph);
   tile.sync();
   calc_row_min(tile, ph);
   tile.sync();
   row_sub(tile, ph);
   tile.sync();
-  END_TIME(STEP1);
-  START_TIME(STEP2);
+
   calc_col_min(tile, ph);
   tile.sync();
   col_sub(tile, ph);
@@ -508,27 +506,24 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
     tile.sync();
   } while (ph.repeat_kernel);
   tile.sync();
-  END_TIME(STEP2);
 
   while (1)
   {
-    START_TIME(STEP3);
+
     tile.sync();
     step_3_init(tile, ph);
     tile.sync();
     step_3(tile, ph);
     tile.sync();
-    END_TIME(STEP3);
 
     if (ph.n_matches >= SIZE)
       break;
-    START_TIME(STEP4);
+
     step_4_init(tile, ph);
     tile.sync();
-    END_TIME(STEP4);
+
     while (1)
     {
-      START_TIME(STEP4);
       do
       {
         tile.sync();
@@ -542,11 +537,9 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
         tile.sync();
       } while (ph.repeat_kernel && !ph.goto_5);
       tile.sync();
-      END_TIME(STEP4);
 
       if (ph.goto_5)
         break;
-      START_TIME(STEP6);
       tile.sync();
 
       min_reduce_kernel1(tile, SIZE * SIZE, ph);
@@ -592,16 +585,14 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
 
       step_6_add_sub_fused_compress_matrix(tile, ph);
       tile.sync();
-      END_TIME(STEP6);
     }
-    START_TIME(STEP5);
+
     tile.sync();
     // checkpoint();
     step_5a(tile, ph);
     tile.sync();
     step_5b(tile, ph);
     tile.sync();
-    END_TIME(STEP5);
   }
   tile.sync();
   return;
@@ -626,24 +617,8 @@ fundef void PHA_fa(TILE tile, PARTITION_HANDLE<data> &ph, int *row_fa, int *col_
     }
   }
   tile.sync();
-  if (caller == 1)
-  {
-    START_TIME(SOLVE_LAP_FEAS);
-  }
-  else
-  {
-    START_TIME(SOLVE_LAP_SUBGRAD);
-  }
   PHA(tile, ph);
   tile.sync();
-  if (caller == 1)
-  {
-    END_TIME(SOLVE_LAP_FEAS);
-  }
-  else
-  {
-    END_TIME(SOLVE_LAP_SUBGRAD);
-  }
 }
 
 fundef void get_X(TILE tile, PARTITION_HANDLE<data> &ph, int *X)

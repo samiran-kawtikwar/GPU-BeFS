@@ -4,7 +4,7 @@
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
-// #define TIMER
+#define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;
@@ -172,11 +172,11 @@ enum CounterName
   WAITING,
   WAITING_UNDERFLOW,
   TRANSFER,
-  FEAS_CHECK,
+  // FEAS_CHECK,
   UPDATE_LB,
-  SOLVE_LAP_FEAS,
-  SOLVE_LAP_SUBGRAD,
-  BRANCH,
+  // SOLVE_LAP_FEAS,
+  // SOLVE_LAP_SUBGRAD,
+  // BRANCH,
   NUM_COUNTERS
 };
 
@@ -204,11 +204,11 @@ const char *CounterName_text[] = {
     "WAITING",
     "WAITING_UNDERFLOW",
     "TRANSFER",
-    "FEAS_CHECK",
+    // "FEAS_CHECK",
     "UPDATE_LB",
-    "SOLVE_LAP_FEAS",
-    "SOLVE_LAP_SUBGRAD",
-    "BRANCH",
+    // "SOLVE_LAP_FEAS",
+    // "SOLVE_LAP_SUBGRAD",
+    // "BRANCH",
     "NUM_COUNTERS"};
 
 const char *LAPCounterName_text[] = {

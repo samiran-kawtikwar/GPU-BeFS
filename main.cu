@@ -200,7 +200,7 @@ int main(int argc, char **argv)
 
 #ifdef TIMER
   printCounters(counters, false);
-  printCounters(lap_counters, false);
+  // printCounters(lap_counters, false);
 #endif
 
   // Get exit code
