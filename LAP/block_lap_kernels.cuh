@@ -22,13 +22,21 @@ __constant__ size_t ncols;
 #if TileSize <= WARP_SIZE
 template <typename Op>
 __forceinline__ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, Op operation)
-
 {
   // Intra-tile reduction
-  for (int offset = tile.size() / 2; offset > 0; offset /= 2)
-  {
-    value = operation(value, tile.shfl_down(value, offset));
-  }
+  typedef cub::WarpReduce<float, TileSize> WR;
+  __shared__ typename WR::TempStorage temp_storage[TilesPerBlock];
+  value = WR(temp_storage[tile.meta_group_rank()]).Reduce(value, operation);
+  return value;
+}
+#elif TileSize == BlockSize
+template <typename Op>
+__forceinline__ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, Op operation)
+{
+  // perform blockReduce with cub
+  typedef cub::BlockReduce<float, BlockSize> BR;
+  __shared__ typename BR::TempStorage temp_storage;
+  value = BR(temp_storage).Reduce(value, operation);
   return value;
 }
 #else
