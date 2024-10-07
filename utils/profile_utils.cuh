@@ -64,24 +64,24 @@ __host__ void normalizeCounters(Counters *counters)
   }
 }
 
-// __host__ void fixOverLappingCounters(Counters *counters)
-// {
-//   for (uint t = 0; t < GRID_DIM_X; t++)
-//   {
-//     assert(counters[t].totalTime[UPDATE_LB] >= counters[t].totalTime[SOLVE_LAP_SUBGRAD]);
-//     counters[t].totalTime[UPDATE_LB] -= counters[t].totalTime[SOLVE_LAP_SUBGRAD];
+__host__ void fixOverLappingCounters(Counters *counters)
+{
+  for (uint t = 0; t < GRID_DIM_X; t++)
+  {
+    // assert(counters[t].totalTime[UPDATE_LB] >= counters[t].totalTime[SOLVE_LAP_SUBGRAD]);
+    // counters[t].totalTime[UPDATE_LB] -= counters[t].totalTime[SOLVE_LAP_SUBGRAD];
 
-//     assert(counters[t].totalTime[FEAS_CHECK] >= counters[t].totalTime[SOLVE_LAP_FEAS]);
-//     counters[t].totalTime[FEAS_CHECK] -= counters[t].totalTime[SOLVE_LAP_FEAS];
+    // assert(counters[t].totalTime[FEAS_CHECK] >= counters[t].totalTime[SOLVE_LAP_FEAS]);
+    // counters[t].totalTime[FEAS_CHECK] -= counters[t].totalTime[SOLVE_LAP_FEAS];
 
-//     assert(counters[t].totalTime[WAITING] >= counters[t].totalTime[WAITING_UNDERFLOW]);
-//     counters[t].totalTime[WAITING] -= counters[t].totalTime[WAITING_UNDERFLOW];
-//   }
-// }
+    assert(counters[t].totalTime[WAITING] >= counters[t].totalTime[WAITING_UNDERFLOW]);
+    counters[t].totalTime[WAITING] -= counters[t].totalTime[WAITING_UNDERFLOW];
+  }
+}
 
 __host__ void printCounters(Counters *counters, bool print_blockwise_stats = false)
 {
-  // fixOverLappingCounters(counters);
+  fixOverLappingCounters(counters);
   normalizeCounters(counters);
   printf(", ");
   for (unsigned int i = 0; i < NUM_COUNTERS; i++)
@@ -119,15 +119,15 @@ __host__ void printCounters(Counters *counters, bool print_blockwise_stats = fal
     printf("%.2f, ", (col_mean[i] * 100.0f) / grand_total);
   printf("\n");
 
-  // printf("Variance/mean, ");
-  // for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
-  // {
-  //   float variance = 0;
-  //   for (uint t = 1; t < GRID_DIM_X; t++)
-  //   {
-  //     variance += (counters[t].percentTime[i] - (col_mean[i])) * (counters[t].percentTime[i] - (col_mean[i]));
-  //   }
-  //   printf("%.2f, ", variance / GRID_DIM_X / col_mean[i]);
-  // }
-  // printf("\n");
+  printf("Variance/mean, ");
+  for (unsigned int i = 0; i < NUM_COUNTERS; ++i)
+  {
+    float variance = 0;
+    for (uint t = 1; t < GRID_DIM_X; t++)
+    {
+      variance += (counters[t].percentTime[i] - (col_mean[i])) * (counters[t].percentTime[i] - (col_mean[i]));
+    }
+    printf("%.2f, ", variance / GRID_DIM_X / col_mean[i]);
+  }
+  printf("\n");
 }
