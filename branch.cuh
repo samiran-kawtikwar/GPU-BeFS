@@ -46,7 +46,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
         my_space->level[child_id] = 1;
         my_space->LB[child_id] = (float)pinfo->costs[child_id * psize];
       }
-      tile.sync();
+      sync(tile);
       if (local_id == 0)
       {
         if (my_space->LB[child_id] < UB)
@@ -82,11 +82,11 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
           a[my_index].value = b[tile_id];
           a[my_index].key = my_space->LB[child_id];
         }
-        tile.sync();
+        sync(tile);
         // copy fixed assignments
         for (uint j = local_id; j < psize; j += TileSize)
           b[tile_id]->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
-        tile.sync();
+        sync(tile);
       }
     }
 
@@ -225,14 +225,14 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       START_TIME(UPDATE_LB);
       if (local_id == 0)
         my_i[tile_id] = atomicAdd(&child_id, 1);
-      tile.sync();
+      sync(tile);
       uint i = my_i[tile_id];
       while (i < psize - lvl)
       {
         // Get popped_node info in the worker space
         for (uint j = local_id; j < psize; j += TileSize)
           my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
-        tile.sync();
+        sync(tile);
 
         if (local_id == 0)
         {
@@ -263,19 +263,19 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           current_node_info[tile_id] = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
           current_node[tile_id].value = &current_node_info[tile_id];
         }
-        tile.sync();
+        sync(tile);
         feas_check(pinfo, tile,
                    &current_node[tile_id], col_fa[tile_id],
                    lap_costs[tile_id], stats, my_space->feasible[i],
                    ph[tile_id]);
 
-        tile.sync();
+        sync(tile);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
           update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
                                 &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
-          tile.sync();
+          sync(tile);
 
           if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
           {
@@ -308,11 +308,11 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         {
           if (local_id == 0)
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
-          tile.sync();
+          sync(tile);
         }
         if (local_id == 0)
           my_i[tile_id] = atomicAdd(&child_id, 1);
-        tile.sync();
+        sync(tile);
         i = my_i[tile_id];
       }
       __syncthreads();

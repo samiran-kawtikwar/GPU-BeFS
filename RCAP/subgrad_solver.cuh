@@ -69,7 +69,7 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
   __shared__ float lrate[TilesPerBlock], denom[TilesPerBlock], feas[TilesPerBlock], neg[TilesPerBlock];
   __shared__ bool restart[TilesPerBlock], terminate[TilesPerBlock];
   __shared__ uint t[TilesPerBlock];
-  tile.sync();
+  sync(tile);
 
   // Initialize
   init(tile, mult, g, LB,
@@ -77,7 +77,7 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
 
   if (tile.thread_rank() == 0)
     ph.cost = lap_costs;
-  tile.sync();
+  sync(tile);
 
   while (t[tile_id] < MAX_ITER)
   {
@@ -94,7 +94,7 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
 
     if (tile.thread_rank() == 0)
       LB[t[tile_id]] = ph.objective[0] - neg[tile_id];
-    tile.sync();
+    sync(tile);
 
     get_X(tile, ph, X);
 
@@ -126,11 +126,11 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
         terminate[tile_id] = true;
       t[tile_id]++;
     }
-    tile.sync();
+    sync(tile);
     if (terminate[tile_id])
       break;
   }
-  tile.sync();
+  sync(tile);
   // Use cub to take the max of the LB array
   get_LB(tile, LB, space->max_LB[worker_id]);
 
@@ -140,7 +140,7 @@ __device__ void subgrad_solver_tile(const problem_info *pinfo, TILE tile,
   //   DLog(info, "Max LB: %.3f\n", space->max_LB[blockIdx.x]);
   //   DLog(info, "Subgrad Solver Gap: %.3f%%\n", (UB - space->max_LB[blockIdx.x]) * 100 / UB);
   // }
-  tile.sync();
+  sync(tile);
 }
 
 __global__ void g_subgrad_solver(const problem_info *pinfo, subgrad_space *space, float UB)

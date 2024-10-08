@@ -12,6 +12,17 @@ namespace cg = cooperative_groups;
 #define fundef template <typename data = float> \
 __forceinline__ __device__
 
+__device__ __forceinline__ void sync(cg::thread_block_tile<TileSize> tile)
+{
+#if TileSize == BlockSize
+  __syncthreads();
+#elif TileSize == WARP_SIZE
+  __syncwarp();
+#else
+  tile.sync();
+#endif
+}
+
 __constant__ size_t SIZE;
 __constant__ uint NPROB;
 __constant__ size_t nrows;
@@ -61,7 +72,7 @@ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, O
 
   cg::thread_block_tile<WARP_SIZE> subtile = cg::tiled_partition<WARP_SIZE>(tile);
   __shared__ float red_val[TilesPerBlock];
-  tile.sync();
+  sync(tile);
   if (subtile.meta_group_rank() == 0)
   {
     for (uint i = WARP_SIZE + subtile.thread_rank(); i < TileSize; i += WARP_SIZE)
@@ -77,7 +88,7 @@ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, O
     }
     subtile.sync();
   }
-  tile.sync();
+  sync(tile);
   return red_val[tile.meta_group_rank()];
 }
 #endif
@@ -113,14 +124,14 @@ fundef void calc_col_min(TILE tile, PARTITION_HANDLE<data> &ph) // with single b
       thread_min = min(thread_min, ph.slack[i]);
       i += (size_t)TileSize * SIZE;
     }
-    tile.sync();
+    sync(tile);
 
     thread_min = tileReduce(tile, thread_min, cub::Min());
     if (tile.thread_rank() == 0)
     {
       ph.min_in_cols[col] = thread_min;
     }
-    tile.sync();
+    sync(tile);
   }
 }
 
@@ -145,13 +156,13 @@ fundef void calc_row_min(TILE tile, PARTITION_HANDLE<data> &ph) // with single b
     {
       thread_min = min(thread_min, ph.slack[i]);
     }
-    tile.sync();
+    sync(tile);
     thread_min = tileReduce(tile, thread_min, cub::Min());
     if (tile.thread_rank() == 0)
     {
       ph.min_in_rows[row] = thread_min;
     }
-    tile.sync();
+    sync(tile);
   }
 }
 
@@ -193,10 +204,10 @@ fundef void step_2(TILE tile, PARTITION_HANDLE<data> &ph)
 
   do
   {
-    tile.sync();
+    sync(tile);
     if (i == 0)
       ph.repeat = false;
-    tile.sync();
+    sync(tile);
 
     for (int j = i; j < ph.zeros_size; j += TileSize)
     {
@@ -224,7 +235,7 @@ fundef void step_2(TILE tile, PARTITION_HANDLE<data> &ph)
         }
       }
     }
-    tile.sync();
+    sync(tile);
   } while (ph.repeat);
   if (ph.s_repeat_kernel)
     ph.repeat_kernel = true;
@@ -282,13 +293,13 @@ fundef void step_4(TILE tile, PARTITION_HANDLE<data> &ph)
     ph.goto_5 = false;
     ph.repeat_kernel = false;
   }
-  tile.sync();
+  sync(tile);
   do
   {
-    tile.sync();
+    sync(tile);
     if (i == 0)
       ph.s_found = false;
-    tile.sync();
+    sync(tile);
     for (size_t j = tile.thread_rank(); j < ph.zeros_size; j += TileSize)
     {
       // each thread picks a zero!
@@ -315,7 +326,7 @@ fundef void step_4(TILE tile, PARTITION_HANDLE<data> &ph)
         }
       }
     } // for(int j
-    tile.sync();
+    sync(tile);
   } while (ph.s_found && !ph.goto_5);
 }
 
@@ -347,7 +358,7 @@ fundef void min_reduce_kernel1(TILE tile, const size_t n, PARTITION_HANDLE<data>
     myval = min(myval, min(g1, g2));
     i += gridSize;
   }
-  tile.sync();
+  sync(tile);
 
   data minimum = tileReduce(tile, myval, cub::Min());
   if (tile.thread_rank() == 0)
@@ -370,7 +381,7 @@ fundef void step_6_init(TILE tile, PARTITION_HANDLE<data> &ph)
     else
       ph.min_in_cols[i] -= ph.d_min_in_mat[0] / 2;
   }
-  tile.sync();
+  sync(tile);
 }
 
 /* STEP 5:
@@ -485,79 +496,79 @@ fundef void get_objective(TILE tile, PARTITION_HANDLE<data> &ph)
   if (tile.thread_rank() == 0)
     ph.objective[0] = obj;
 
-  tile.sync();
+  sync(tile);
 }
 
 fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = blockIdx.x)
 {
   init(tile, ph);
-  tile.sync();
+  sync(tile);
   calc_row_min(tile, ph);
-  tile.sync();
+  sync(tile);
   row_sub(tile, ph);
-  tile.sync();
+  sync(tile);
 
   calc_col_min(tile, ph);
-  tile.sync();
+  sync(tile);
   col_sub(tile, ph);
-  tile.sync();
+  sync(tile);
 
   compress_matrix(tile, ph);
-  tile.sync();
+  sync(tile);
   do
   {
-    tile.sync();
+    sync(tile);
     if (tile.thread_rank() == 0)
       ph.repeat_kernel = false;
-    tile.sync();
+    sync(tile);
     step_2(tile, ph);
-    tile.sync();
+    sync(tile);
   } while (ph.repeat_kernel);
-  tile.sync();
+  sync(tile);
 
   while (1)
   {
 
-    tile.sync();
+    sync(tile);
     step_3_init(tile, ph);
-    tile.sync();
+    sync(tile);
     step_3(tile, ph);
-    tile.sync();
+    sync(tile);
 
     if (ph.n_matches >= SIZE)
       break;
 
     step_4_init(tile, ph);
-    tile.sync();
+    sync(tile);
 
     while (1)
     {
       do
       {
-        tile.sync();
+        sync(tile);
         if (tile.thread_rank() == 0)
         {
           ph.goto_5 = false;
           ph.repeat_kernel = false;
         }
-        tile.sync();
+        sync(tile);
         step_4(tile, ph);
-        tile.sync();
+        sync(tile);
       } while (ph.repeat_kernel && !ph.goto_5);
-      tile.sync();
+      sync(tile);
 
       if (ph.goto_5)
         break;
-      tile.sync();
+      sync(tile);
 
       min_reduce_kernel1(tile, SIZE * SIZE, ph);
-      tile.sync();
+      sync(tile);
 
 #if __DEBUG__D == true
       {
         if (ph.d_min_in_mat[0] <= eps)
         {
-          tile.sync();
+          sync(tile);
           if (tile.thread_rank() == 0)
           {
             printf("minimum element in problemID %u is non positive: %.3f\n", problemID, (float)ph.d_min_in_mat[0]);
@@ -584,25 +595,25 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
           }
           return;
         }
-        tile.sync();
+        sync(tile);
       }
 #endif
 
       step_6_init(tile, ph); // Also does dual update
-      tile.sync();
+      sync(tile);
 
       step_6_add_sub_fused_compress_matrix(tile, ph);
-      tile.sync();
+      sync(tile);
     }
 
-    tile.sync();
+    sync(tile);
     // checkpoint();
     step_5a(tile, ph);
-    tile.sync();
+    sync(tile);
     step_5b(tile, ph);
-    tile.sync();
+    sync(tile);
   }
-  tile.sync();
+  sync(tile);
   return;
 }
 
@@ -624,9 +635,9 @@ fundef void PHA_fa(TILE tile, PARTITION_HANDLE<data> &ph, int *row_fa, int *col_
       }
     }
   }
-  tile.sync();
+  sync(tile);
   PHA(tile, ph);
-  tile.sync();
+  sync(tile);
 }
 
 fundef void get_X(TILE tile, PARTITION_HANDLE<data> &ph, int *X)
@@ -635,14 +646,14 @@ fundef void get_X(TILE tile, PARTITION_HANDLE<data> &ph, int *X)
   {
     X[i] = 0;
   }
-  tile.sync();
+  sync(tile);
   for (uint r = tile.thread_rank(); r < SIZE; r += TileSize)
   {
     int c = ph.column_of_star_at_row[r];
     // assert(c >= 0);
     X[c * SIZE + r] = 1;
   }
-  tile.sync();
+  sync(tile);
 }
 
 fundef void set_handles(TILE tile, PARTITION_HANDLE<data> &ph, TILED_HANDLE<data> &th)

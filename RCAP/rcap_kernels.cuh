@@ -55,21 +55,21 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, TILE tile,
     feasible = true;
     ph.cost = lap_costs;
   }
-  tile.sync();
+  sync(tile);
 
   // set col_fa using row_fa
   for (uint i = local_id; i < psize; i += TileSize)
   {
     col_fa[i] = 0;
   }
-  tile.sync();
+  sync(tile);
 
   for (uint i = local_id; i < psize; i += TileSize)
   {
     if (row_fa[i] > 0)
       col_fa[row_fa[i] - 1] = i + 1;
   }
-  tile.sync();
+  sync(tile);
 
   for (uint k = 0; k < ncommmodities; k++)
   {
@@ -78,10 +78,10 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, TILE tile,
     {
       lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
     }
-    tile.sync();
+    sync(tile);
 
     PHA_fa<float>(tile, ph, a->value->fixed_assignments, col_fa, 1);
-    tile.sync();
+    sync(tile);
     get_objective(tile, ph);
     if (tile.thread_rank() == 0)
     {
@@ -92,11 +92,11 @@ __device__ __forceinline__ void feas_check(const problem_info *pinfo, TILE tile,
         atomicAdd(&stats->nodes_pruned_infeasible, 1);
       }
     }
-    tile.sync();
+    sync(tile);
     if (!feasible)
       break;
   }
-  tile.sync();
+  sync(tile);
 }
 
 // Simple bounds based on fixed assignments
@@ -119,7 +119,7 @@ __device__ void update_bounds_subgrad(const problem_info *pinfo, TILE tile,
   const uint tile_id = tile.meta_group_rank();
   if (tile.thread_rank() == 0)
     row_fa[tile_id] = a[0].value->fixed_assignments;
-  tile.sync();
+  sync(tile);
   // Update UB using the current fixed assignments
   for (int i = tile.thread_rank(); i < SIZE; i += TileSize)
   {
@@ -128,11 +128,11 @@ __device__ void update_bounds_subgrad(const problem_info *pinfo, TILE tile,
       atomicAdd(&UB, (float)pinfo->costs[i * SIZE + (row_fa[tile_id][i] - 1)]);
     }
   }
-  tile.sync();
+  sync(tile);
 
   subgrad_solver_tile(pinfo, tile, space, UB, row_fa[tile_id], col_fa, ph);
-  tile.sync();
+  sync(tile);
   if (tile.thread_rank())
     a[0].value->LB = space->max_LB[blockIdx.x * TilesPerBlock + tile.meta_group_rank()];
-  tile.sync();
+  sync(tile);
 }

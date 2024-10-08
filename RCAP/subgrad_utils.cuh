@@ -17,13 +17,13 @@ __device__ __forceinline__ void init(TILE tile, float *mult, float *g, float *LB
     mult[k] = 0;
     g[k] = 0;
   }
-  tile.sync();
+  sync(tile);
   // reset LB to zero
   for (size_t t = tile.thread_rank(); t < MAX_ITER; t += TileSize)
   {
     LB[t] = 0;
   }
-  tile.sync();
+  sync(tile);
   if (tile.thread_rank() == 0)
   {
     restart = false;
@@ -31,7 +31,7 @@ __device__ __forceinline__ void init(TILE tile, float *mult, float *g, float *LB
     lrate = 2;
     t = 0;
   }
-  tile.sync();
+  sync(tile);
 }
 
 __device__ __forceinline__ void reset(TILE tile, float *g, float *mult,
@@ -44,7 +44,7 @@ __device__ __forceinline__ void reset(TILE tile, float *g, float *mult,
     if (restart)
       mult[k] = 0;
   }
-  tile.sync();
+  sync(tile);
   if (tile.thread_rank() == 0)
   {
     denom = 0;
@@ -52,7 +52,7 @@ __device__ __forceinline__ void reset(TILE tile, float *g, float *mult,
     feas = 0;
     neg = 0;
   }
-  tile.sync();
+  sync(tile);
 }
 
 __device__ __forceinline__ void update_lap_costs(TILE tile, float *lap_costs, const problem_info *pinfo,
@@ -69,12 +69,12 @@ __device__ __forceinline__ void update_lap_costs(TILE tile, float *lap_costs, co
     }
     lap_costs[i] += sum;
   }
-  tile.sync();
+  sync(tile);
   for (size_t k = tile.thread_rank(); k < K; k += TileSize)
   {
     atomicAdd(&neg, mult[k] * pinfo->budgets[k]);
   }
-  tile.sync();
+  sync(tile);
 }
 
 __device__ __forceinline__ void get_denom(const problem_info *pinfo, TILE tile,
@@ -93,7 +93,7 @@ __device__ __forceinline__ void get_denom(const problem_info *pinfo, TILE tile,
       real += float(X[i] * pinfo->costs[i]);
     }
     sum = tileReduce(tile, sum, cub::Sum());
-    tile.sync();
+    sync(tile);
     real = tileReduce(tile, real, cub::Sum());
     if (tile.thread_rank() == 0)
     {
@@ -103,7 +103,7 @@ __device__ __forceinline__ void get_denom(const problem_info *pinfo, TILE tile,
       feas += max(float(0), g[k]);
       real_obj[0] = real;
     }
-    tile.sync();
+    sync(tile);
   }
 }
 
@@ -114,7 +114,7 @@ __device__ __forceinline__ void update_mult(TILE tile, float *mult, float *g, fl
   {
     mult[k] += max(float(0), lrate * (g[k] * (UB - LB)) / denom);
   }
-  tile.sync();
+  sync(tile);
 }
 
 __device__ __forceinline__ float round_to(float val, int places)
@@ -128,12 +128,12 @@ __device__ __forceinline__ void get_LB(TILE tile, float *LB, float &max_LB)
   float val = 0;
   for (size_t i = tile.thread_rank(); i < MAX_ITER; i += TileSize)
     val = max(val, LB[i]);
-  tile.sync();
+  sync(tile);
   float max_ = tileReduce(tile, val, cub::Max());
-  tile.sync();
+  sync(tile);
   if (tile.thread_rank() == 0)
     max_LB = ceil(round_to(max_, 3));
-  tile.sync();
+  sync(tile);
 }
 
 __device__ __forceinline__ void check_feasibility(const problem_info *pinfo, TILE tile, PARTITION_HANDLE<float> &ph,
@@ -156,5 +156,5 @@ __device__ __forceinline__ void check_feasibility(const problem_info *pinfo, TIL
       terminate = true;
     }
   }
-  tile.sync();
+  sync(tile);
 }
