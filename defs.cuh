@@ -4,7 +4,7 @@
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
-#define TIMER
+// #define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;
@@ -12,7 +12,7 @@ typedef uint cost_type;
 typedef uint weight_type;
 
 #define BlockSize 64U
-#define TileSize 16U
+#define TileSize 64U
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
 

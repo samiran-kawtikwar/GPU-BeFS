@@ -85,26 +85,26 @@ __device__ __forceinline__ void get_denom(const problem_info *pinfo, TILE tile,
 
   for (int k = 0; k < K; k++)
   {
-    float sum = 0, real = 0;
+    float sum = 0;
     for (int i = tile.thread_rank(); i < SIZE * SIZE; i += TileSize)
-    {
-      // atomicAdd(&g[k], float(X[i] * pinfo->weights[k * N * N + i]));
       sum += float(X[i] * pinfo->weights[k * N * N + i]);
-      real += float(X[i] * pinfo->costs[i]);
-    }
     sum = tileReduce(tile, sum, cub::Sum());
     sync(tile);
-    real = tileReduce(tile, real, cub::Sum());
     if (tile.thread_rank() == 0)
     {
       g[k] = sum;
       g[k] -= float(pinfo->budgets[k]);
       denom += g[k] * g[k];
       feas += max(float(0), g[k]);
-      real_obj[0] = real;
     }
-    sync(tile);
   }
+  float real = 0;
+  for (int i = tile.thread_rank(); i < SIZE * SIZE; i += TileSize)
+    real += float(X[i] * pinfo->costs[i]);
+  real = tileReduce(tile, real, cub::Sum());
+  if (tile.thread_rank() == 0)
+    real_obj[0] = real;
+  sync(tile);
 }
 
 __device__ __forceinline__ void update_mult(TILE tile, float *mult, float *g, float lrate,

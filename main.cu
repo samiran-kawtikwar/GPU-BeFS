@@ -180,6 +180,7 @@ int main(int argc, char **argv)
              queue_caller(memory_queue, tickets, head, tail), d_node_space,
              memory_queue_len);
 
+  Log(warn, "TileSize: %u", TileSize);
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
