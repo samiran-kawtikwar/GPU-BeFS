@@ -212,14 +212,22 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       END_TIME(TRANSFER);
 
       // start branching to get children
+      __shared__ uint child_id, my_i[TilesPerBlock];
       if (threadIdx.x == 0)
+      {
         nfail = 0; // Owned by Block
+        child_id = 0;
+      }
       __syncthreads();
       // Check feasibility and update bounds of each child
       __shared__ node current_node[TilesPerBlock];           // Ownership: Tile
       __shared__ node_info current_node_info[TilesPerBlock]; // Ownership: Tile
       START_TIME(UPDATE_LB);
-      for (uint i = tile_id; i < psize - lvl; i += TilesPerBlock)
+      if (local_id == 0)
+        my_i[tile_id] = atomicAdd(&child_id, 1);
+      tile.sync();
+      uint i = my_i[tile_id];
+      while (i < psize - lvl)
       {
         // Get popped_node info in the worker space
         for (uint j = local_id; j < psize; j += TileSize)
@@ -302,6 +310,10 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
           tile.sync();
         }
+        if (local_id == 0)
+          my_i[tile_id] = atomicAdd(&child_id, 1);
+        tile.sync();
+        i = my_i[tile_id];
       }
       __syncthreads();
       END_TIME(UPDATE_LB);
