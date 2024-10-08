@@ -12,7 +12,7 @@ namespace cg = cooperative_groups;
 #define fundef template <typename data = float> \
 __forceinline__ __device__
 
-__device__ __forceinline__ void sync(cg::thread_block_tile<TileSize> tile)
+__device__ __forceinline__ void sync(TILE tile)
 {
 #if TileSize == BlockSize
   __syncthreads();
@@ -32,7 +32,7 @@ __constant__ size_t ncols;
 
 #if TileSize <= WARP_SIZE
 template <typename Op>
-__forceinline__ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, Op operation)
+__forceinline__ __device__ float tileReduce(TILE tile, float value, Op operation)
 {
   // Intra-tile reduction
   typedef cub::WarpReduce<float, TileSize> WR;
@@ -42,7 +42,7 @@ __forceinline__ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile
 }
 #elif TileSize == BlockSize
 template <typename Op>
-__forceinline__ __device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, Op operation)
+__forceinline__ __device__ float tileReduce(TILE tile, float value, Op operation)
 {
   // perform blockReduce with cub
   typedef cub::BlockReduce<float, BlockSize> BR;
@@ -65,7 +65,7 @@ __device__ float warpReduce(cg::thread_block_tile<WARP_SIZE> tile, float value, 
 
 // Generalized tile-based reduction function
 template <typename Op>
-__device__ float tileReduce(cg::thread_block_tile<TileSize> tile, float value, Op operation)
+__device__ float tileReduce(TILE tile, float value, Op operation)
 {
   __shared__ float val[TilesPerBlock][TileSize];
   val[tile.meta_group_rank()][tile.thread_rank()] = value;
@@ -418,7 +418,7 @@ fundef void step_5a(TILE tile, PARTITION_HANDLE<data> &ph)
 }
 
 // Applies the alternating paths
-fundef void step_5b(cg::thread_block_tile<TileSize> tile, PARTITION_HANDLE<data> &ph)
+fundef void step_5b(TILE tile, PARTITION_HANDLE<data> &ph)
 {
   // size_t j = (size_t)blockDim.x * (size_t)blockIdx.x + (size_t)threadIdx.x;
   for (size_t j = tile.thread_rank(); j < SIZE; j += TileSize)
