@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cooperative_groups.h>
 #include "utils/cuda_utils.cuh"
 #include "memory_manager.cuh"
 #include "request_manager.cuh"
@@ -8,6 +9,8 @@
 #include "RCAP/rcap_kernels.cuh"
 
 #include "LAP/Hung_Tlap.cuh"
+
+namespace cg = cooperative_groups;
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                   node_info *node_space, const problem_info *pinfo,
@@ -21,23 +24,30 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     uint *my_addresses = work_space[bId].address_space;
     worker_info *my_space = &work_space[bId];
     __shared__ uint nchild, child_index;
+
     if (threadIdx.x == 0)
     {
       nchild = 0;
       child_index = 0;
     }
     __syncthreads();
+
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<TileSize> tile = cg::tiled_partition<TileSize>(block);
+    const uint tile_id = tile.meta_group_rank();
+    const uint local_id = tile.thread_rank();
+
     // get nchildren and their bounds
-    for (uint child_id = 0; child_id < psize; child_id++)
+    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
     {
-      if (threadIdx.x == 0)
+      if (local_id == 0)
       {
         my_space->fixed_assignments[psize * child_id + child_id] = 1;
         my_space->level[child_id] = 1;
         my_space->LB[child_id] = (float)pinfo->costs[child_id * psize];
       }
-      __syncthreads();
-      if (threadIdx.x == 0)
+      sync(tile);
+      if (local_id == 0)
       {
         if (my_space->LB[child_id] < UB)
         {
@@ -57,21 +67,26 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     // construct a for sending to queue
     node *a = work_space[bId].nodes;
     __syncthreads();
-    for (uint child_id = threadIdx.x; child_id < psize; child_id += blockDim.x)
+
+    __shared__ node_info *b[TilesPerBlock];
+    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
     {
       if (my_space->feasible[child_id])
       {
-        uint my_index = atomicAdd(&child_index, 1);
-        node_info *b = &node_space[my_addresses[my_index]];
-
+        if (local_id == 0)
+        {
+          uint my_index = atomicAdd(&child_index, 1);
+          b[tile_id] = &node_space[my_addresses[my_index]];
+          b[tile_id]->LB = my_space->LB[child_id];
+          b[tile_id]->level = my_space->level[child_id];
+          a[my_index].value = b[tile_id];
+          a[my_index].key = my_space->LB[child_id];
+        }
+        sync(tile);
         // copy fixed assignments
-        for (uint j = 0; j < psize; j++)
-          b->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
-
-        b->LB = my_space->LB[child_id];
-        b->level = my_space->level[child_id];
-        a[my_index].value = b;
-        a[my_index].key = my_space->LB[child_id];
+        for (uint j = local_id; j < psize; j += TileSize)
+          b[tile_id]->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
+        sync(tile);
       }
     }
 
@@ -82,12 +97,15 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     __syncthreads();
 
     // reset my_space
-    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    for (uint i = tile_id; i < psize; i += TilesPerBlock)
     {
-      my_space->LB[i] = 0;
-      my_space->feasible[i] = false;
-      my_space->level[i] = 0;
-      for (uint j = 0; j < psize; j++)
+      if (local_id == 0)
+      {
+        my_space->LB[i] = 0;
+        my_space->feasible[i] = false;
+        my_space->level[i] = 0;
+      }
+      for (uint j = local_id; j < psize; j += TileSize)
         my_space->fixed_assignments[psize * i + j] = 0;
     }
   }
@@ -102,8 +120,9 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
     }
   }
 }
+
 // Add launch bounds
-__launch_bounds__(n_threads, 2048 / n_threads)
+__launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                    node_info *node_space, subgrad_space *subgrad_space, const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
@@ -116,30 +135,38 @@ __launch_bounds__(n_threads, 2048 / n_threads)
 
   if (blockIdx.x > 0)
   {
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<TileSize> tile = cg::tiled_partition<TileSize>(block);
+    const uint tile_id = tile.meta_group_rank();
+    const uint local_id = tile.thread_rank();
+
     INIT_TIME(counters);
     INIT_TIME(lap_counters);
     START_TIME(INIT);
 
-    __shared__ uint *my_addresses;
-    __shared__ int *col_fa;
-    __shared__ float *lap_costs;
-    __shared__ worker_info *my_space;
-    if (threadIdx.x == 0)
+    __shared__ uint *my_addresses;              // Ownership: Block
+    __shared__ worker_info *my_space;           // Ownership: Block
+    __shared__ int *col_fa[TilesPerBlock];      // Ownership: Tile
+    __shared__ float *lap_costs[TilesPerBlock]; // Ownership: Tile
+    if (local_id == 0)
     {
-      my_addresses = work_space[blockIdx.x].address_space;
+      if (threadIdx.x == 0)
+      {
+        my_addresses = work_space[blockIdx.x].address_space;
+        my_space = &work_space[blockIdx.x];
+      }
       // Needed for feasibility check
-      col_fa = &subgrad_space->col_fixed_assignments[blockIdx.x * psize];
-      lap_costs = &subgrad_space->lap_costs[blockIdx.x * psize * psize]; // subgradient always works with floats
-      my_space = &work_space[blockIdx.x];
+      col_fa[tile_id] = &subgrad_space->col_fixed_assignments[(blockIdx.x * TilesPerBlock + tile_id) * psize];
+      lap_costs[tile_id] = &subgrad_space->lap_costs[(blockIdx.x * TilesPerBlock + tile_id) * psize * psize]; // subgradient always works with floats
     }
-    __shared__ GLOBAL_HANDLE<float> gh;
-    __shared__ SHARED_HANDLE sh;
-    __shared__ float UB;
+    __shared__ PARTITION_HANDLE<float> ph[TilesPerBlock]; // needed for LAP. ownership: Tile
+    __shared__ float UB[TilesPerBlock];                   // needed for subgradient, ownership: Tile
 
-    set_handles(gh, subgrad_space->T.th);
-    __shared__ node popped_node;
-    __shared__ uint popped_index, nchild_feas, lvl;
-    __shared__ bool opt_flag, overflow_flag;
+    set_handles(tile, ph[tile_id], subgrad_space->T.th);
+    __shared__ node popped_node;                           // Ownership: Block
+    __shared__ uint popped_index, nchild_feas, lvl, nfail; // Ownership: Block
+    __shared__ bool opt_flag, overflow_flag;               // Ownership: Block
+
     if (threadIdx.x == 0)
     {
       opt_flag = false;
@@ -164,7 +191,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
       END_TIME(QUEUING);
 
       START_TIME(WAITING);
-      // Wait for POP to be done
+      // Wait for POP to be done  -- Entire block waits
       if (wait_for_pop(queue_space) == false)
         break;
 
@@ -177,29 +204,37 @@ __launch_bounds__(n_threads, 2048 / n_threads)
         popped_node = queue_space[blockIdx.x].nodes[0];
         nchild_feas = 0;
         popped_index = popped_node.value->id;
-        UB = float(global_UB); // Reset UB
         lvl = popped_node.value->level;
       }
+      if (local_id == 0)
+        UB[tile_id] = float(global_UB); // Reset UB
       __syncthreads();
       END_TIME(TRANSFER);
 
       // start branching to get children
-      __shared__ uint nfail;
+      __shared__ uint child_id, my_i[TilesPerBlock];
       if (threadIdx.x == 0)
-        nfail = 0;
+      {
+        nfail = 0; // Owned by Block
+        child_id = 0;
+      }
       __syncthreads();
       // Check feasibility and update bounds of each child
-      for (uint i = 0; i < psize - lvl; i++)
+      __shared__ node current_node[TilesPerBlock];           // Ownership: Tile
+      __shared__ node_info current_node_info[TilesPerBlock]; // Ownership: Tile
+      START_TIME(UPDATE_LB);
+      if (local_id == 0)
+        my_i[tile_id] = atomicAdd(&child_id, 1);
+      sync(tile);
+      uint i = my_i[tile_id];
+      while (i < psize - lvl)
       {
-        START_TIME(BRANCH);
-        __shared__ node current_node;
-        __shared__ node_info current_node_info;
         // Get popped_node info in the worker space
-        for (uint j = threadIdx.x; j < psize; j += blockDim.x)
+        for (uint j = local_id; j < psize; j += TileSize)
           my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
-        __syncthreads();
+        sync(tile);
 
-        if (threadIdx.x == 0)
+        if (local_id == 0)
         {
           if (my_space->fixed_assignments[i * psize + i] == 0)
           {
@@ -207,8 +242,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
           }
           else
           {
-            uint offset = nfail;
-            nfail++;
+            uint offset = atomicAdd(&nfail, 1);
             // find appropriate index
             uint prog = 0, index = psize - lvl;
             for (uint j = psize - lvl; j < psize; j++)
@@ -226,61 +260,63 @@ __launch_bounds__(n_threads, 2048 / n_threads)
             my_space->fixed_assignments[i * psize + index] = lvl + 1;
           }
           my_space->level[i] = lvl + 1;
-          current_node_info = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
-          current_node.value = &current_node_info;
+          current_node_info[tile_id] = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
+          current_node[tile_id].value = &current_node_info[tile_id];
         }
-        __syncthreads();
-        END_TIME(BRANCH);
-        START_TIME(FEAS_CHECK);
-        feas_check(pinfo, &current_node, col_fa, lap_costs, stats, my_space->feasible[i], gh, sh);
-        __syncthreads();
-        END_TIME(FEAS_CHECK);
+        sync(tile);
+        feas_check(pinfo, tile,
+                   &current_node[tile_id], col_fa[tile_id],
+                   lap_costs[tile_id], stats, my_space->feasible[i],
+                   ph[tile_id]);
+
+        sync(tile);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
-          START_TIME(UPDATE_LB);
-          update_bounds_subgrad(pinfo, subgrad_space, UB, &current_node, col_fa, gh, sh);
-          __syncthreads();
-          END_TIME(UPDATE_LB);
-          START_TIME(BRANCH);
-          if (lvl + 1 == psize && current_node.value->LB <= global_UB)
+          update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
+                                &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
+          sync(tile);
+
+          if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               printf("Optimal solution reached with cost %f\n", popped_node.value->LB);
               opt_reached.store(true, cuda::memory_order_release);
             }
           }
-          else if (current_node.value->LB <= global_UB)
+          else if (current_node[tile_id].value->LB <= global_UB)
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               atomicAdd(&stats->nodes_explored, 1);
-              nchild_feas++;
+              atomicAdd(&nchild_feas, 1);
               my_space->feasible[i] = true;
-              my_space->LB[i] = current_node.value->LB;
+              my_space->LB[i] = current_node[tile_id].value->LB;
             }
           }
           else
           {
-            if (threadIdx.x == 0)
+            if (local_id == 0)
             {
               atomicAdd(&stats->nodes_pruned_incumbent, 1);
               my_space->feasible[i] = false;
             }
           }
-          END_TIME(BRANCH);
         }
         else
         {
-          START_TIME(BRANCH);
-          if (threadIdx.x == 0)
+          if (local_id == 0)
             atomicAdd(&stats->nodes_pruned_infeasible, 1);
-          __syncthreads();
-          END_TIME(BRANCH);
+          sync(tile);
         }
+        if (local_id == 0)
+          my_i[tile_id] = atomicAdd(&child_id, 1);
+        sync(tile);
+        i = my_i[tile_id];
       }
       __syncthreads();
+      END_TIME(UPDATE_LB);
       START_TIME(QUEUING);
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
@@ -307,7 +343,7 @@ __launch_bounds__(n_threads, 2048 / n_threads)
         if (!overflow_flag)
         {
           node *a = my_space->nodes;
-          __shared__ uint index;
+          __shared__ uint index; // Ownership: Block
           if (threadIdx.x == 0)
             index = 0;
           __syncthreads();
@@ -330,8 +366,8 @@ __launch_bounds__(n_threads, 2048 / n_threads)
                         queue_caller(request_queue, tickets, head, tail),
                         request_queue_size, queue_space);
         }
-        __syncthreads();
       }
+      __syncthreads();
       END_TIME(QUEUING);
 
       START_TIME(INIT);

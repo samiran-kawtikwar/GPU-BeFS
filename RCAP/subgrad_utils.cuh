@@ -7,59 +7,59 @@
 
 #include "../LAP/Hung_Tlap.cuh"
 
-__device__ __forceinline__ void init(float *mult, float *g, float *LB,
+__device__ __forceinline__ void init(TILE tile, float *mult, float *g, float *LB,
                                      bool &restart, bool &terminate, float &lrate, uint &t,
                                      const uint K)
 {
   // reset mult, g to zero
-  for (size_t k = threadIdx.x; k < K; k += blockDim.x)
+  for (size_t k = tile.thread_rank(); k < K; k += TileSize)
   {
     mult[k] = 0;
     g[k] = 0;
   }
-  __syncthreads();
+  sync(tile);
   // reset LB to zero
-  for (size_t t = threadIdx.x; t < MAX_ITER; t += blockDim.x)
+  for (size_t t = tile.thread_rank(); t < MAX_ITER; t += TileSize)
   {
     LB[t] = 0;
   }
-  __syncthreads();
-  if (threadIdx.x == 0)
+  sync(tile);
+  if (tile.thread_rank() == 0)
   {
     restart = false;
     terminate = false;
     lrate = 2;
     t = 0;
   }
-  __syncthreads();
+  sync(tile);
 }
 
-__device__ __forceinline__ void reset(float *g, float *mult,
+__device__ __forceinline__ void reset(TILE tile, float *g, float *mult,
                                       float &denom, float &feas, float &neg, bool &restart,
                                       const uint K)
 {
-  for (int k = threadIdx.x; k < K; k += blockDim.x)
+  for (int k = tile.thread_rank(); k < K; k += TileSize)
   {
     g[k] = 0;
     if (restart)
       mult[k] = 0;
   }
-  __syncthreads();
-  if (threadIdx.x == 0)
+  sync(tile);
+  if (tile.thread_rank() == 0)
   {
     denom = 0;
     restart = false;
     feas = 0;
     neg = 0;
   }
-  __syncthreads();
+  sync(tile);
 }
 
-__device__ __forceinline__ void update_lap_costs(float *lap_costs, const problem_info *pinfo,
+__device__ __forceinline__ void update_lap_costs(TILE tile, float *lap_costs, const problem_info *pinfo,
                                                  float *mult, float &neg,
                                                  const uint N, const uint K)
 {
-  for (size_t i = threadIdx.x; i < N * N; i += blockDim.x)
+  for (size_t i = tile.thread_rank(); i < N * N; i += TileSize)
   {
     lap_costs[i] = pinfo->costs[i];
     float sum = 0;
@@ -69,53 +69,52 @@ __device__ __forceinline__ void update_lap_costs(float *lap_costs, const problem
     }
     lap_costs[i] += sum;
   }
-  __syncthreads();
-  for (size_t k = threadIdx.x; k < K; k += blockDim.x)
+  sync(tile);
+  for (size_t k = tile.thread_rank(); k < K; k += TileSize)
   {
     atomicAdd(&neg, mult[k] * pinfo->budgets[k]);
   }
-  __syncthreads();
+  sync(tile);
 }
 
-__device__ __forceinline__ void get_denom(float *g, float *real_obj, int *X,
+__device__ __forceinline__ void get_denom(const problem_info *pinfo, TILE tile,
+                                          float *g, float *real_obj, int *X,
                                           float &denom, float &feas,
-                                          const problem_info *pinfo, const uint N, const uint K)
+                                          const uint N, const uint K)
 {
-  typedef cub::BlockReduce<float, n_threads> BR;
-  __shared__ typename BR::TempStorage temp_storage;
+
   for (int k = 0; k < K; k++)
   {
-    float sum = 0, real = 0;
-    for (int i = threadIdx.x; i < SIZE * SIZE; i += blockDim.x)
-    {
-      // atomicAdd(&g[k], float(X[i] * pinfo->weights[k * N * N + i]));
+    float sum = 0;
+    for (int i = tile.thread_rank(); i < SIZE * SIZE; i += TileSize)
       sum += float(X[i] * pinfo->weights[k * N * N + i]);
-      real += float(X[i] * pinfo->costs[i]);
-    }
-    sum = BR(temp_storage).Reduce(sum, cub::Sum());
-    __syncthreads();
-    real = BR(temp_storage).Reduce(real, cub::Sum());
-    if (threadIdx.x == 0)
+    sum = tileReduce(tile, sum, cub::Sum());
+    sync(tile);
+    if (tile.thread_rank() == 0)
     {
       g[k] = sum;
       g[k] -= float(pinfo->budgets[k]);
       denom += g[k] * g[k];
       feas += max(float(0), g[k]);
-      real_obj[0] = real;
     }
-    __syncthreads();
   }
+  float real = 0;
+  for (int i = tile.thread_rank(); i < SIZE * SIZE; i += TileSize)
+    real += float(X[i] * pinfo->costs[i]);
+  real = tileReduce(tile, real, cub::Sum());
+  if (tile.thread_rank() == 0)
+    real_obj[0] = real;
+  sync(tile);
 }
 
-__device__ __forceinline__ void update_mult(float *mult, float *g, float lrate,
-                                            float denom, float LB,
-                                            float UB, uint K)
+__device__ __forceinline__ void update_mult(TILE tile, float *mult, float *g, float lrate,
+                                            float denom, float LB, float UB, uint K)
 {
-  for (int k = threadIdx.x; k < K; k += blockDim.x)
+  for (int k = tile.thread_rank(); k < K; k += TileSize)
   {
     mult[k] += max(float(0), lrate * (g[k] * (UB - LB)) / denom);
   }
-  __syncthreads();
+  sync(tile);
 }
 
 __device__ __forceinline__ float round_to(float val, int places)
@@ -124,25 +123,23 @@ __device__ __forceinline__ float round_to(float val, int places)
   return round(val * factor) / factor;
 }
 
-__device__ __forceinline__ void get_LB(float *LB, float &max_LB)
+__device__ __forceinline__ void get_LB(TILE tile, float *LB, float &max_LB)
 {
-  typedef cub::BlockReduce<float, n_threads> BR;
-  __shared__ typename BR::TempStorage temp_storage;
   float val = 0;
-  for (size_t i = threadIdx.x; i < MAX_ITER; i += blockDim.x)
+  for (size_t i = tile.thread_rank(); i < MAX_ITER; i += TileSize)
     val = max(val, LB[i]);
-  __syncthreads();
-  float max_ = BR(temp_storage).Reduce(val, cub::Max());
-  __syncthreads();
-  if (threadIdx.x == 0)
+  sync(tile);
+  float max_ = tileReduce(tile, val, cub::Max());
+  sync(tile);
+  if (tile.thread_rank() == 0)
     max_LB = ceil(round_to(max_, 3));
-  __syncthreads();
+  sync(tile);
 }
 
-__device__ __forceinline__ void check_feasibility(const problem_info *pinfo, GLOBAL_HANDLE<float> &gh,
-                                                  float &LB, bool &terminate, const float feas)
+__device__ __forceinline__ void check_feasibility(const problem_info *pinfo, TILE tile, PARTITION_HANDLE<float> &ph,
+                                                  bool &terminate, const float feas)
 {
-  if (threadIdx.x == 0)
+  if (tile.thread_rank() == 0)
   {
     if (feas < eps)
     {
@@ -153,11 +150,11 @@ __device__ __forceinline__ void check_feasibility(const problem_info *pinfo, GLO
       float obj = 0;
       for (uint r = 0; r < SIZE; r++)
       {
-        int c = gh.column_of_star_at_row[r];
+        int c = ph.column_of_star_at_row[r];
         obj += pinfo->costs[c * SIZE + r];
       }
       terminate = true;
     }
   }
-  __syncthreads();
+  sync(tile);
 }

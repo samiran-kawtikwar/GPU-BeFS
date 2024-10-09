@@ -87,19 +87,35 @@ int main(int argc, char **argv)
   t.reset();
 
   // Create space for queue
-  int nworkers; // equals grid dimension of request manager
+  int nworkers, nsubworkers; // equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, n_threads, 0);
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
-  Log(debug, "Number of SMs: %d", deviceProp.multiProcessorCount);
   nworkers *= deviceProp.multiProcessorCount;
+  nsubworkers = BlockSize / TileSize;
 
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
-  Log(debug, "Max potential block size: %d", nb1);
-  Log(debug, "Max potential grid size: %d", nw1);
+  Log(info, "Max potential block size: %d", nb1);
+  Log(info, "Max potential grid size: %d", nw1);
 
-  queue_info *d_queue_space, *h_queue_space;
+  // Create space for bound computation storing and branching
+  Log(debug, "Creating scratch space for workers");
+  worker_info *d_worker_space; // managed by each worker
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
+  worker_info::allocate_all(d_worker_space, nworkers, psize);
+
+  Log(debug, "Creating space for subgrad solver");
+  subgrad_space *d_subgrad_space; // managed by each subworker
+  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nsubworkers * nworkers * sizeof(subgrad_space)));
+  d_subgrad_space->allocate(psize, ncommodities, nsubworkers * nworkers, dev_);
+
+  // Call subgrad_solver Block
+  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  // printf("Exiting...\n");
+  // exit(0);
+
+  queue_info *d_queue_space, *h_queue_space; // Queue is managed by workers
   CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
   h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
   memset(h_queue_space, 0, nworkers * sizeof(queue_info));
@@ -111,21 +127,6 @@ int main(int argc, char **argv)
   }
   CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
   delete[] h_queue_space;
-
-  // Create space for bound computation storing and branching
-  Log(debug, "Creating space for subgrad solver");
-  worker_info *d_worker_space;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
-  worker_info::allocate_all(d_worker_space, nworkers, psize);
-
-  subgrad_space *d_subgrad_space;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nworkers * sizeof(subgrad_space)));
-  d_subgrad_space->allocate(psize, ncommodities, nworkers, dev_);
-
-  // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, n_threads, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
-  // printf("Exiting...\n");
-  // exit(0);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
@@ -155,7 +156,7 @@ int main(int argc, char **argv)
              d_node_space, d_fixed_assignment_space, psize, memory_queue_len);
 
   // create space for hold_status
-  bool *d_hold_status;
+  bool *d_hold_status; // Managed by Workers
   CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, nworkers * sizeof(bool)));
   CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
 
@@ -175,19 +176,20 @@ int main(int argc, char **argv)
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
 
   // Populate memory queue and node_space IDs
-  execKernel(fill_memory_queue, memory_queue_len, 32, dev_, true,
+  execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_node_space,
              memory_queue_len);
 
+  Log(warn, "TileSize: %u", TileSize);
   // Frist kernel to create L1 nodes
-  execKernel(initial_branching, 2, n_threads, dev_, true,
+  execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
   cuProfilerStart();
-  execKernel(branch_n_bound, nworkers, n_threads, dev_, true,
+  execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, d_subgrad_space, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
@@ -199,7 +201,7 @@ int main(int argc, char **argv)
 
 #ifdef TIMER
   printCounters(counters, false);
-  printCounters(lap_counters, false);
+  // printCounters(lap_counters, false);
 #endif
 
   // Get exit code

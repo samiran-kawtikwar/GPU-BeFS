@@ -41,58 +41,62 @@ __device__ __forceinline__ void feas_check_naive(const problem_info *pinfo, cons
   }
 }
 
-__device__ __forceinline__ void feas_check(const problem_info *pinfo, const node *a, int *col_fa,
+__device__ __forceinline__ void feas_check(const problem_info *pinfo, TILE tile,
+                                           const node *a, int *col_fa,
                                            float *lap_costs, bnb_stats *stats, bool &feasible,
-                                           GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
+                                           PARTITION_HANDLE<float> &ph)
 {
   const uint psize = pinfo->psize, ncommmodities = pinfo->ncommodities;
   const int *row_fa = a->value->fixed_assignments;
-  if (threadIdx.x == 0)
+  const uint local_id = tile.thread_rank();
+
+  if (local_id == 0)
   {
     feasible = true;
-    gh.cost = lap_costs;
+    ph.cost = lap_costs;
   }
-  __syncthreads();
+  sync(tile);
 
   // set col_fa using row_fa
-  for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+  for (uint i = local_id; i < psize; i += TileSize)
   {
     col_fa[i] = 0;
   }
-  __syncthreads();
-  for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+  sync(tile);
+
+  for (uint i = local_id; i < psize; i += TileSize)
   {
     if (row_fa[i] > 0)
       col_fa[row_fa[i] - 1] = i + 1;
   }
-  __syncthreads();
+  sync(tile);
 
   for (uint k = 0; k < ncommmodities; k++)
   {
     // copy weights to lap_costs for further operations
-    for (uint i = threadIdx.x; i < psize * psize; i += blockDim.x)
+    for (uint i = local_id; i < psize * psize; i += TileSize)
     {
       lap_costs[i] = float(pinfo->weights[k * psize * psize + i]);
     }
-    __syncthreads();
+    sync(tile);
 
-    BHA_fa<float>(gh, sh, a->value->fixed_assignments, col_fa, 1);
-    __syncthreads();
-    get_objective_block(gh);
-    if (threadIdx.x == 0)
+    PHA_fa<float>(tile, ph, a->value->fixed_assignments, col_fa, 1);
+    sync(tile);
+    get_objective(tile, ph);
+    if (tile.thread_rank() == 0)
     {
-      float used_budget = gh.objective[0];
+      float used_budget = ph.objective[0];
       if (used_budget > pinfo->budgets[k])
       {
         feasible = false;
         atomicAdd(&stats->nodes_pruned_infeasible, 1);
       }
     }
-    __syncthreads();
+    sync(tile);
     if (!feasible)
       break;
   }
-  __syncthreads();
+  sync(tile);
 }
 
 // Simple bounds based on fixed assignments
@@ -107,26 +111,28 @@ __device__ __forceinline__ void update_bounds(const problem_info *pinfo, const n
   __syncthreads();
 }
 
-__device__ void update_bounds_subgrad(const problem_info *pinfo, subgrad_space *space,
-                                      float &UB, node *a, int *col_fa,
-                                      GLOBAL_HANDLE<float> &gh, SHARED_HANDLE &sh)
+__device__ void update_bounds_subgrad(const problem_info *pinfo, TILE tile,
+                                      subgrad_space *space, float &UB, node *a, int *col_fa,
+                                      PARTITION_HANDLE<float> &ph)
 {
-  __shared__ int *row_fa;
-  if (threadIdx.x == 0)
-    row_fa = a[0].value->fixed_assignments;
-  __syncthreads();
+  __shared__ int *row_fa[TilesPerBlock];
+  const uint tile_id = tile.meta_group_rank();
+  if (tile.thread_rank() == 0)
+    row_fa[tile_id] = a[0].value->fixed_assignments;
+  sync(tile);
   // Update UB using the current fixed assignments
-  for (int i = threadIdx.x; i < SIZE; i += blockDim.x)
+  for (int i = tile.thread_rank(); i < SIZE; i += TileSize)
   {
-    if (row_fa[i] != 0)
+    if (row_fa[tile_id][i] != 0)
     {
-      atomicAdd(&UB, (float)pinfo->costs[i * SIZE + (row_fa[i] - 1)]);
+      atomicAdd(&UB, (float)pinfo->costs[i * SIZE + (row_fa[tile_id][i] - 1)]);
     }
   }
-  __syncthreads();
+  sync(tile);
 
-  subgrad_solver_block(pinfo, space, UB, row_fa, col_fa, gh, sh);
-  __syncthreads();
-  a[0].value->LB = space->max_LB[blockIdx.x];
-  __syncthreads();
+  subgrad_solver_tile(pinfo, tile, space, UB, row_fa[tile_id], col_fa, ph);
+  sync(tile);
+  if (tile.thread_rank())
+    a[0].value->LB = space->max_LB[blockIdx.x * TilesPerBlock + tile.meta_group_rank()];
+  sync(tile);
 }

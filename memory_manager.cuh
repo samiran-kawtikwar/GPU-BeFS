@@ -11,10 +11,11 @@ __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
                                   node_info *node_space,
                                   uint memory_queue_len)
 {
-  if (threadIdx.x == 0)
+  uint id = blockIdx.x * blockDim.x + threadIdx.x;
+  if (id < memory_queue_len)
   {
-    queue_enqueue(queue, tickets, head, tail, memory_queue_len, blockIdx.x);
-    node_space[blockIdx.x].id = blockIdx.x;
+    queue_enqueue(queue, tickets, head, tail, memory_queue_len, id);
+    node_space[id].id = id;
   }
 }
 

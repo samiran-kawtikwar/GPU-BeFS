@@ -11,8 +11,12 @@ typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
 
-const uint n_threads = 64;
-const uint GRID_DIM_X = (2048 / n_threads) * 108;
+#define BlockSize 64U
+#define TileSize 64U
+#define TilesPerBlock (BlockSize / TileSize)
+#define TILE cg::thread_block_tile<TileSize>
+
+const uint GRID_DIM_X = (2048 / BlockSize) * 108;
 
 enum TaskType
 {
@@ -168,11 +172,11 @@ enum CounterName
   WAITING,
   WAITING_UNDERFLOW,
   TRANSFER,
-  FEAS_CHECK,
+  // FEAS_CHECK,
   UPDATE_LB,
-  SOLVE_LAP_FEAS,
-  SOLVE_LAP_SUBGRAD,
-  BRANCH,
+  // SOLVE_LAP_FEAS,
+  // SOLVE_LAP_SUBGRAD,
+  // BRANCH,
   NUM_COUNTERS
 };
 
@@ -200,11 +204,11 @@ const char *CounterName_text[] = {
     "WAITING",
     "WAITING_UNDERFLOW",
     "TRANSFER",
-    "FEAS_CHECK",
+    // "FEAS_CHECK",
     "UPDATE_LB",
-    "SOLVE_LAP_FEAS",
-    "SOLVE_LAP_SUBGRAD",
-    "BRANCH",
+    // "SOLVE_LAP_FEAS",
+    // "SOLVE_LAP_SUBGRAD",
+    // "BRANCH",
     "NUM_COUNTERS"};
 
 const char *LAPCounterName_text[] = {
