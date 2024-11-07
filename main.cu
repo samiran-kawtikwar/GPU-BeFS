@@ -72,7 +72,7 @@ int main(int argc, char **argv)
   const cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u", (uint)UB);
   Log(info, "Time taken by Gurobi: %f sec\n", t.elapsed());
-
+  exit(0);
   // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
 

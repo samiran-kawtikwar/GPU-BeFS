@@ -22,7 +22,7 @@ CPPFLAGS ?= -O3
 CPPINC ?= -I${GUROBI_HOME}/include
 
 LDIR ?= -L${GUROBI_HOME}/lib
-LDFLAGS ?= -lcuda -lgomp -lgurobi_c++ -lgurobi100
+LDFLAGS ?= -lcuda -lgomp -lgurobi_c++ -lgurobi110
 
 all: $(BUILD_DIR)/main.exe
 

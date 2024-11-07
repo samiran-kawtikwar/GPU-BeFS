@@ -19,8 +19,8 @@ cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type 
     model.set("Presolve", "0");
     model.set("Cuts", "0");
     model.set("Threads", "1");
-    model.set("Method", "0");
-    model.set("NodeMethod", "0");
+    // model.set("Method", "0");
+    // model.set("NodeMethod", "0");
 
     // Create variables
     GRBVar *x = new GRBVar[N * N];
