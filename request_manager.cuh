@@ -18,7 +18,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                                      bool *hold_status)
 {
   __shared__ bool fork, opt_flag, overflow_flag, underflow_flag;
-  __shared__ uint qidx, dequeued_idx, count, invalid_count;
+  __shared__ uint qidx, dequeued_idx, count, invalid_count, queue_length;
   __shared__ TaskType task_type;
   if (threadIdx.x == 0)
   {
@@ -33,9 +33,10 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       overflow_flag = true;
     if (heap_underflow.load(cuda::memory_order_relaxed))
       underflow_flag = true;
+    queue_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
   }
   __syncthreads();
-  while (!opt_flag && !overflow_flag && !underflow_flag)
+  while (!opt_flag && !underflow_flag)
   {
     // Dequeue here
     if (threadIdx.x == 0)
@@ -83,7 +84,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             push(heap, queue_space[blockIdx.x].nodes[0]);
             break;
           case POP:
-            if (heap.d_size[0] > 0)
+            if (heap.d_size[0] > 0 && !overflow_flag)
             {
               pop(heap, min);
             }
@@ -99,8 +100,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                   invalid_count++;
                 }
                 hold_status[dequeued_idx] = true;
-                // send the pop request back to the queue
-                queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
+                // send the pop request back to the queue if overflow hasn't occurred
+                if (!overflow_flag)
+                  queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
               }
               __syncthreads();
             }
@@ -155,8 +157,29 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
         overflow_flag = true;
       if (heap_underflow.load(cuda::memory_order_relaxed))
         underflow_flag = true;
+      queue_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
+      if (overflow_flag)
+        DLog(debug, "Current queue length: %u\n", queue_length);
     }
     __syncthreads();
+    if (queue_length == 0 && overflow_flag)
+    {
+      break;
+    }
+  }
+  __syncthreads();
+  if (threadIdx.x == 0)
+  {
+    if (opt_flag)
+      DLog(critical, "Optimality reached\n");
+    if (overflow_flag)
+    {
+      DLog(critical, "Heap overflow detected\n");
+      // print request queue size
+      DLog(debug, "Request Queue length: %u\n", queue_length);
+    }
+    if (underflow_flag)
+      DLog(critical, "Heap underflow detected\n");
   }
   return;
 }

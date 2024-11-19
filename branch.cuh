@@ -318,10 +318,6 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       __syncthreads();
       END_TIME(UPDATE_LB);
       START_TIME(QUEUING);
-      // free the popped node from node space
-      free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
-                  popped_index);
-      __syncthreads();
       if (opt_reached.load(cuda::memory_order_relaxed))
       {
         if (threadIdx.x == 0)
@@ -332,16 +328,13 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       if (nchild_feas > 0 && !opt_flag)
       {
         // get nchild addresses
-        get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild_feas, my_addresses);
+        get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild_feas, my_addresses, &overflow_flag);
 
-        if (threadIdx.x == 0)
-        {
-          if (heap_overflow.load(cuda::memory_order_relaxed))
-            overflow_flag = true;
-        }
         __syncthreads();
         if (!overflow_flag)
         {
+          // if (threadIdx.x == 0)
+          //   DLog(warn, "Block %u got memory\n", blockIdx.x, nchild_feas);
           node *a = my_space->nodes;
           __shared__ uint index; // Ownership: Block
           if (threadIdx.x == 0)
@@ -365,7 +358,25 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           send_requests(BATCH_PUSH, nchild_feas, a,
                         queue_caller(request_queue, tickets, head, tail),
                         request_queue_size, queue_space);
+          if (threadIdx.x == 0)
+            DLog(debug, "Block %u pushed %u children\n", blockIdx.x, nchild_feas);
         }
+      }
+      __syncthreads();
+      if (!overflow_flag)
+      {
+        // free the popped node from node space
+        free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
+                    popped_index);
+      }
+      else
+      {
+        // push the popped node back to the queue
+        send_requests(PUSH, 1, queue_space[blockIdx.x].nodes,
+                      queue_caller(request_queue, tickets, head, tail),
+                      request_queue_size, queue_space);
+        if (threadIdx.x == 0)
+          DLog(debug, "Block %u ran out of space, pushing back the node\n", blockIdx.x);
       }
       __syncthreads();
       END_TIME(QUEUING);

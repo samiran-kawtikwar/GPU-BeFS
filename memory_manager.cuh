@@ -44,20 +44,26 @@ __device__ void queue_length(queue_callee(queue, tickets, head, tail))
 __device__ void get_memory(queue_callee(queue, tickets, head, tail),
                            uint queue_size,
                            uint n_tokens,
-                           uint *dequeued_idx)
+                           uint *dequeued_idx,
+                           bool *overflow_flag = nullptr)
 {
-  __shared__ bool fork, overflow_flag;
+  __shared__ bool fork;
   __shared__ uint qidx, sh_count;
+  if (overflow_flag == nullptr)
+  {
+    __shared__ bool o_flag; // define overflow flag when not provided
+    overflow_flag = &o_flag;
+  }
   // try dequeue
   if (threadIdx.x == 0)
   {
     sh_count = 0;
-    overflow_flag = false;
+    *overflow_flag = false;
     if (heap_overflow.load(cuda::memory_order_relaxed))
-      overflow_flag = true;
+      *overflow_flag = true;
   }
   __syncthreads();
-  while (sh_count < n_tokens && !overflow_flag)
+  while (sh_count < n_tokens && !*overflow_flag)
   {
     if (threadIdx.x == 0)
     {
@@ -81,20 +87,17 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
         uint size = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
         if (size < n_tokens)
         {
-          DLog(warn, "Memory queue empty, block %u ran out of space :(\n", blockIdx.x);
+          DLog(debug, "no space for block %u: available: %u, needed: %u\n", blockIdx.x, size, n_tokens);
           heap_overflow.store(true, cuda::memory_order_release);
+          *overflow_flag = true;
         }
       }
     }
     __syncthreads();
-    if (threadIdx.x == 0)
-    {
-      if (heap_overflow.load(cuda::memory_order_relaxed))
-        overflow_flag = true;
-    }
-    __syncthreads();
     // sleep block here if needed
   }
+  if (threadIdx.x == 0 && !*overflow_flag)
+    DLog(debug, "Block %u got memory\n", blockIdx.x, n_tokens);
 }
 
 // Should always be called by single block
