@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 // #define __DEBUG__
-// #define DEBUG_D
+#define DEBUG_D
 
 namespace logger
 {

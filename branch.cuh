@@ -174,7 +174,11 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       if (opt_reached.load(cuda::memory_order_relaxed))
         opt_flag = true;
       if (heap_overflow.load(cuda::memory_order_relaxed))
+      {
         overflow_flag = true;
+        if (threadIdx.x == 0)
+          DLog(warn, "Block %u detected heap overflow\n", blockIdx.x);
+      }
     }
     __syncthreads();
 

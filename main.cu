@@ -30,6 +30,11 @@ __global__ void get_exit_code(ExitCode *ec)
                                                             : ExitCode::UNKNOWN_ERROR;
 }
 
+__global__ void reset_overflow()
+{
+  heap_overflow.store(false, cuda::memory_order_release);
+}
+
 __global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assignment_space, const uint size, const uint len)
 {
   size_t g_tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -137,7 +142,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = (free * 0.000001) / memory_queue_weight; // Keeping 5% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create space for node_info
@@ -188,30 +193,48 @@ int main(int argc, char **argv)
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
+
   cuProfilerStart();
-  execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
-             queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_node_space, d_subgrad_space, d_problem_info,
-             queue_caller(request_queue, tickets, head, tail), nworkers,
-             d_queue_space, d_worker_space, d_bheap,
-             d_hold_status,
-             UB, stats);
-  cuProfilerStop();
-  printf("\n");
-
-#ifdef TIMER
-  printCounters(counters, false);
-  // printCounters(lap_counters, false);
-#endif
-
   // Get exit code
   ExitCode exit_code, *d_exit_code;
   CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));
-  execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
-  CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
-  CUDA_RUNTIME(cudaFree(d_exit_code));
 
-  d_bheap.print_size();
+  int counter = 0;
+  do
+  {
+    execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
+               queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
+               d_node_space, d_subgrad_space, d_problem_info,
+               queue_caller(request_queue, tickets, head, tail), nworkers,
+               d_queue_space, d_worker_space, d_bheap,
+               d_hold_status,
+               UB, stats);
+    printf("\n");
+
+#ifdef TIMER
+    printCounters(counters, false);
+    // printCounters(lap_counters, false);
+#endif
+    Log(info, "Kernel finished, checking exit code");
+    execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
+    CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
+    d_bheap.print_size();
+    if (exit_code == HEAP_FULL)
+    {
+      // sort the heap and move to cpu
+      d_bheap.print();
+      d_bheap.sort();
+      d_bheap.move_tail(0.5);
+      d_bheap.print();
+      // write a kernel to reset overflow flag
+      execKernel(reset_overflow, 1, 1, dev_, false);
+    }
+    counter++;
+  } while (!(exit_code == OPTIMAL || exit_code == INFEASIBLE) && counter < 10);
+
+  CUDA_RUNTIME(cudaFree(d_exit_code));
+  cuProfilerStop();
+
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
   Log(info, "Nodes Explored: %u, Incumbant: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
   Log(info, "Total time taken: %f sec", t.elapsed());

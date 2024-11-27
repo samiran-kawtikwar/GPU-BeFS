@@ -6,6 +6,8 @@
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
+#include <thrust/device_ptr.h>
+#include <thrust/sort.h>
 
 template <typename NODE>
 class BHEAP
@@ -47,7 +49,7 @@ public:
     printf("heap size: %lu\n", h_size[0]);
     for (size_t i = 0; i < h_size[0]; i++)
     {
-      printf("%f, ", h_heap[i].key);
+      printf("%u, ", (uint)h_heap[i].key);
     }
     printf("\n");
   }
@@ -55,10 +57,38 @@ public:
   {
     size_t *h_size = (size_t *)malloc(sizeof(size_t));
     CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
-    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * h_size[0]);
-    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap, sizeof(NODE) * h_size[0], cudaMemcpyDeviceToHost));
-
     Log(info, "Heap size at termination: %lu", h_size[0]);
+  }
+  void sort()
+  {
+    Log(info, "Sorting the heap");
+    size_t *h_size = (size_t *)malloc(sizeof(size_t));
+    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
+    // sort d_heap in ascending order with CUB
+    if (h_size[0] == 0)
+    {
+      // No elements to sort
+      free(h_size);
+      return;
+    }
+    // Use thrust::device_ptr to wrap the device memory
+    thrust::device_ptr<NODE> dev_ptr(d_heap);
+    // Call thrust::sort to sort the heap in-place
+    thrust::sort(dev_ptr, dev_ptr + h_size[0]);
+    // copy the sorted heap back to host
+    free(h_size); // Free the host-side memory
+  }
+  void move_tail(const float frac)
+  {
+    // This function is used to move the later half of the heap to host to free up space on device
+    size_t *h_size = (size_t *)malloc(sizeof(size_t));
+    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
+    uint nelements = (uint)h_size[0] * frac;
+    uint last = h_size[0] - nelements;
+    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * nelements);
+    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
+    CUDA_RUNTIME(cudaMemcpy(d_size, &last, sizeof(size_t), cudaMemcpyHostToDevice));
+    free(h_size);
   }
 };
 

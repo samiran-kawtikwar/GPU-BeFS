@@ -89,6 +89,12 @@ struct node
   node_info *value;
   __host__ __device__ node() {};
   __host__ __device__ node(float a, node_info *b) : key(a), value(b) {};
+
+  // Comparison operator
+  __host__ __device__ bool operator<(const node &other) const
+  {
+    return key < other.key; // Compare based on the key
+  }
 };
 
 struct d_instruction
