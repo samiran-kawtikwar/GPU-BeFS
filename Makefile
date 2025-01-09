@@ -24,7 +24,7 @@ LDFLAGS_CUDA ?= -lcuda -lgomp
 CPPFLAGS ?= -O3
 CPPINC ?= -I${GUROBI_HOME}/include
 LDIR_CPP ?= -L${GUROBI_HOME}/lib
-LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi100 -lm -D_GLIBCXX_USE_CXX11_ABI=0
+LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi120
 
 all: $(BUILD_DIR)/main.exe
 
