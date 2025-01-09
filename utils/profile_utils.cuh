@@ -10,7 +10,7 @@ struct Counters
   float percentTime[NUM_COUNTERS];
 };
 
-__managed__ Counters counters[GRID_DIM_X];
+__managed__ Counters* counters;
 
 static __device__ void initializeCounters(Counters *counters)
 {
@@ -43,6 +43,16 @@ static __device__ void endTime(CounterName counterName, Counters *counters)
     counters->totalTime[counterName] += clock64() - counters->tmp[counterName];
   }
   __syncthreads();
+}
+
+__host__ void allocateCounters(Counters** counters, const uint nworkers){
+  GRID_DIM_X = nworkers;
+  CUDA_RUNTIME(cudaMallocManaged(counters, nworkers * sizeof(Counters)));
+  CUDA_RUNTIME(cudaDeviceSynchronize());
+}
+
+__host__ void freeCounters(Counters* counters){
+  CUDA_RUNTIME(cudaFree(counters));
 }
 
 __host__ void normalizeCounters(Counters *counters)

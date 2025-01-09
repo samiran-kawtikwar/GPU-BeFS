@@ -10,7 +10,7 @@ struct LAPCounters
   float percentTime[NUM_LAP_COUNTERS];
 };
 
-__managed__ LAPCounters lap_counters[GRID_DIM_X];
+__managed__ LAPCounters *lap_counters;
 
 static __device__ void initializeCounters(LAPCounters *counters)
 {
@@ -43,6 +43,15 @@ static __device__ void endTime(LAPCounterName counterName, LAPCounters *counters
     counters->totalTime[counterName] += clock64() - counters->tmp[counterName];
   }
   __syncthreads();
+}
+
+__host__ void allocateCounters(LAPCounters** counters, const uint nworkers){
+  CUDA_RUNTIME(cudaMallocManaged(counters, nworkers * sizeof(LAPCounters)));
+  CUDA_RUNTIME(cudaDeviceSynchronize());
+}
+
+__host__ void freeCounters(LAPCounters* counters){
+  CUDA_RUNTIME(cudaFree(counters));
 }
 
 __host__ void normalizeCounters(LAPCounters *counters)

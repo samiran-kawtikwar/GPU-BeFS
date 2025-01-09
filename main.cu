@@ -175,6 +175,13 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
 
+#ifdef TIMER
+  allocateCounters(&counters, nworkers);
+  Log(debug, "Allocated regular counters");
+  allocateCounters(&lap_counters, nworkers);
+  Log(debug, "Allocated lap counters");
+#endif
+
   // Populate memory queue and node_space IDs
   execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_node_space,
@@ -202,6 +209,8 @@ int main(int argc, char **argv)
 #ifdef TIMER
   printCounters(counters, false);
   // printCounters(lap_counters, false);
+  freeCounters(counters);
+  freeCounters(lap_counters);
 #endif
 
   // Get exit code

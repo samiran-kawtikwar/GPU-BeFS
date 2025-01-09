@@ -4,7 +4,7 @@
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
-// #define TIMER
+#define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
 typedef unsigned int uint;
@@ -16,7 +16,7 @@ typedef uint weight_type;
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
 
-const uint GRID_DIM_X = (2048 / BlockSize) * 108;
+uint GRID_DIM_X;
 
 enum TaskType
 {
@@ -223,13 +223,13 @@ const char *LAPCounterName_text[] = {
 #ifdef TIMER
 #include "utils/profile_utils.cuh"
 #include "LAP/profile_utils.cuh"
-#define INIT_TIME(counters) initializeCounters(counters);
+#define INIT_TIME(counters) initializeCounters(&counters[blockIdx.x]);
 
 #define START_TIME(countername)                                                       \
   {                                                                                   \
     if (countername < NUM_COUNTERS)                                                   \
       startTime(static_cast<CounterName>(countername), &counters[blockIdx.x]);        \
-    else                                                                              \
+  else                                                                              \
       startTime(static_cast<LAPCounterName>(countername), &lap_counters[blockIdx.x]); \
   }
 
