@@ -229,7 +229,7 @@ const char *LAPCounterName_text[] = {
   {                                                                                   \
     if (countername < NUM_COUNTERS)                                                   \
       startTime(static_cast<CounterName>(countername), &counters[blockIdx.x]);        \
-  else                                                                              \
+    else                                                                              \
       startTime(static_cast<LAPCounterName>(countername), &lap_counters[blockIdx.x]); \
   }
 
