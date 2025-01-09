@@ -3,6 +3,7 @@ debug/**
 .vscode/**
 scratch/**
 scripts/**
+results/**
 compile.sh
 
 *.txt
