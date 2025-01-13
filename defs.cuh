@@ -16,7 +16,7 @@ typedef uint weight_type;
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
 
-const uint GRID_DIM_X = (2048 / BlockSize) * 108;
+uint GRID_DIM_X;
 
 enum TaskType
 {
@@ -229,7 +229,7 @@ const char *LAPCounterName_text[] = {
 #ifdef TIMER
 #include "utils/profile_utils.cuh"
 #include "LAP/profile_utils.cuh"
-#define INIT_TIME(counters) initializeCounters(counters);
+#define INIT_TIME(counters) initializeCounters(&counters[blockIdx.x]);
 
 #define START_TIME(countername)                                                       \
   {                                                                                   \
