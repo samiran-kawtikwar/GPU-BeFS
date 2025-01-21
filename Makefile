@@ -13,18 +13,19 @@ CPP_FILES := $(shell find . -name '*.cpp' $(addprefix -not -path "./", $(addsuff
 CU_OBJ_FILES := $(patsubst %.cu,$(BUILD_DIR)/obj/%.cu.o,$(notdir $(CU_FILES)))
 CPP_OBJ_FILES := $(patsubst %.cpp,$(BUILD_DIR)/obj/%.cpp.o,$(CPP_FILES))
 
+# cpp flags
+CPPFLAGS ?= -O3 -fopenmp -Wno-format-security
+CPPINC ?= -I${GUROBI_HOME}/include
+LDIR_CPP ?= -L${GUROBI_HOME}/lib
+LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110
+
 # cuda flags
-CUDAFLAGS ?= -g -Xcompiler -fopenmp -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
+CUDAFLAGS ?= -g -Xcompiler "$(CPPFLAGS)" -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
 						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
 CUDAINC	?=
 LDIR_CUDA ?= -L$(CUDA_HOME)/lib64
 LDFLAGS_CUDA ?= -lcuda -lgomp
 
-# cpp flags
-CPPFLAGS ?= -O3
-CPPINC ?= -I${GUROBI_HOME}/include
-LDIR_CPP ?= -L${GUROBI_HOME}/lib
-LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110
 
 all: $(BUILD_DIR)/main.exe
 
