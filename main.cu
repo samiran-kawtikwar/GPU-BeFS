@@ -222,7 +222,7 @@ int main(int argc, char **argv)
 
   d_bheap.print_size();
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
-  Log(info, "Nodes Explored: %u, Incumbant: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
+  Log(info, "Nodes Explored: %u, Incumbent: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
   Log(info, "Total time taken: %f sec", t.elapsed());
 
   // Free device memory
