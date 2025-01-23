@@ -10,4 +10,5 @@ compile.sh
 *.txt
 *.log 
 .prettierrc
+profiling/**
 *.ncu-rep
