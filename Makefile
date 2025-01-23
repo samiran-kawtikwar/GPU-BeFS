@@ -14,14 +14,14 @@ CU_OBJ_FILES := $(patsubst %.cu,$(BUILD_DIR)/obj/%.cu.o,$(notdir $(CU_FILES)))
 CPP_OBJ_FILES := $(patsubst %.cpp,$(BUILD_DIR)/obj/%.cpp.o,$(CPP_FILES))
 
 # cpp flags
-CPPFLAGS ?= -O3 -fopenmp -Wno-format-security
+CPPFLAGS ?= -g -O3 -fopenmp -Wno-format-security
 CPPINC ?= -I${GUROBI_HOME}/include
 LDIR_CPP ?= -L${GUROBI_HOME}/lib
 LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110
 
 # cuda flags
-CUDAFLAGS ?= -g -Xcompiler "$(CPPFLAGS)" -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH) \
-						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH)
+CUDAFLAGS ?= -lineinfo -O3 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH)\
+						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH) -Xcompiler "$(CPPFLAGS)"
 CUDAINC	?=
 LDIR_CUDA ?= -L$(CUDA_HOME)/lib64
 LDFLAGS_CUDA ?= -lcuda -lgomp
