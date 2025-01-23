@@ -1,5 +1,6 @@
 build*/**
 debug/**
+.clang-tidy
 .vscode/**
 scratch/**
 scripts/**
@@ -9,4 +10,5 @@ compile.sh
 *.txt
 *.log 
 .prettierrc
+profiling/**
 *.ncu-rep
