@@ -89,3 +89,19 @@ __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tickets_##queue, \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *head_##queue,    \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tail_##queue
+
+__global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uint queue_length)
+{
+    if (threadIdx.x == 0 && blockIdx.x == 0)
+    {
+        printf("Memory queue:   Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
+               tail_queue->load(cuda::memory_order_relaxed),
+               tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed));
+        // print the queue
+        // for (uint i = head_queue->load(cuda::memory_order_relaxed); i < tail_queue->load(cuda::memory_order_relaxed); i++)
+        // {
+        //     printf("%u, ", queue[i % queue_length]);
+        // }
+        // printf("\n");
+    }
+}

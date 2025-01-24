@@ -14,15 +14,19 @@ class BHEAP
 {
 public:
   NODE *d_heap;
-  size_t *d_size, *d_max_size, *d_size_limit;
+  size_t *d_size;         // live size of the device heap
+  size_t *d_max_size;     // max size of the device heap during kernel execution
+  size_t *d_size_limit;   // max allowed size of the device heap
+  size_t *d_trigger_size; // size at which the heap is triggered to move to host
   // Constructors
   __host__ BHEAP(size_t size_limit, int device_id = 0)
   {
     CUDA_RUNTIME(cudaSetDevice(device_id));
     CUDA_RUNTIME(cudaMalloc((void **)&d_heap, sizeof(NODE) * size_limit));
-    CUDA_RUNTIME(cudaMalloc((void **)&d_size, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_size, sizeof(size_t)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_max_size, sizeof(size_t)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_size_limit, sizeof(size_t)));
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_trigger_size, sizeof(size_t)));
 
     CUDA_RUNTIME(cudaMemset(d_size, 0, sizeof(size_t)));
     d_max_size[0] = 0;
@@ -37,6 +41,7 @@ public:
     CUDA_RUNTIME(cudaFree(d_size));
     CUDA_RUNTIME(cudaFree(d_max_size));
     CUDA_RUNTIME(cudaFree(d_size_limit));
+    CUDA_RUNTIME(cudaFree(d_trigger_size));
   }
 
   void print()
@@ -53,42 +58,82 @@ public:
     }
     printf("\n");
   }
-  void print_size()
-  {
-    size_t *h_size = (size_t *)malloc(sizeof(size_t));
-    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
-    Log(info, "Heap size at termination: %lu", h_size[0]);
-  }
+
   void sort()
   {
     Log(info, "Sorting the heap");
-    size_t *h_size = (size_t *)malloc(sizeof(size_t));
-    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
-    // sort d_heap in ascending order with CUB
-    if (h_size[0] == 0)
+    // sort d_heap in ascending order with thrust
+    if (d_size[0] != 0)
     {
-      // No elements to sort
-      free(h_size);
-      return;
+      // Use thrust::device_ptr to wrap the device memory
+      thrust::device_ptr<NODE> dev_ptr(d_heap);
+      // Call thrust::sort to sort the heap in-place
+      thrust::sort(dev_ptr, dev_ptr + d_size[0]);
+      // copy the sorted heap back to host
     }
-    // Use thrust::device_ptr to wrap the device memory
-    thrust::device_ptr<NODE> dev_ptr(d_heap);
-    // Call thrust::sort to sort the heap in-place
-    thrust::sort(dev_ptr, dev_ptr + h_size[0]);
-    // copy the sorted heap back to host
-    free(h_size); // Free the host-side memory
   }
-  void move_tail(const float frac)
+
+  void move_tail(std::vector<NODE> &h_heap, const float frac, const uint psize)
   {
     // This function is used to move the later half of the heap to host to free up space on device
-    size_t *h_size = (size_t *)malloc(sizeof(size_t));
-    CUDA_RUNTIME(cudaMemcpy(h_size, d_size, sizeof(size_t), cudaMemcpyDeviceToHost));
-    uint nelements = (uint)h_size[0] * frac;
-    uint last = h_size[0] - nelements;
-    NODE *h_heap = (NODE *)malloc(sizeof(NODE) * nelements);
-    CUDA_RUNTIME(cudaMemcpy(h_heap, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
-    CUDA_RUNTIME(cudaMemcpy(d_size, &last, sizeof(size_t), cudaMemcpyHostToDevice));
-    free(h_size);
+    d_trigger_size[0] = d_size[0];
+    uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
+    uint last = d_size[0] - nelements;
+    NODE *temp_heap = (NODE *)malloc(sizeof(NODE) * nelements);
+    CUDA_RUNTIME(cudaMemcpy(temp_heap, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
+    d_size[0] = last;
+    h_heap.insert(h_heap.end(), temp_heap, temp_heap + nelements);
+    // copy heap node values to host; can do this in parallel with cpu threads
+    // #pragma omp parallel for
+    for (size_t i = 0; i < nelements; i++)
+    {
+      // create memory for node_info
+      node_info *temp_node = (node_info *)malloc(sizeof(node_info));
+      int *temp_fa = (int *)malloc(psize * sizeof(int));
+      // copy corresponding device pointer to host
+      CUDA_RUNTIME(cudaMemcpy(temp_node, temp_heap[i].value, sizeof(node_info), cudaMemcpyDeviceToHost));
+      CUDA_RUNTIME(cudaMemcpy(temp_fa, temp_node->fixed_assignments, psize * sizeof(int), cudaMemcpyDeviceToHost));
+      temp_node->fixed_assignments = temp_fa;
+      h_heap[i].value = temp_node;
+    }
+    // clear the memory on host
+    free(temp_heap);
+    // Log(warn, "Host best key: %f", h_heap[0].key);
+  }
+
+  // Move the first half of the host heap to device
+  void move_front(std::vector<NODE> &h_heap,
+                  const uint *id,
+                  int *d_fixed_assignment_space,
+                  node_info *d_node_space,
+                  const uint nelements, const uint psize)
+  {
+    assert(d_size[0] == 0);
+    // print();
+    for (size_t i = 0; i < nelements; i++)
+    {
+      const uint d_id = id[i];
+      // copy fixed assignments to device
+      CUDA_RUNTIME(cudaMemcpy(&d_fixed_assignment_space[d_id * psize], h_heap[i].value->fixed_assignments,
+                              psize * sizeof(int), cudaMemcpyHostToDevice));
+      // remap the fixed assignments location
+      free(h_heap[i].value->fixed_assignments);
+      h_heap[i].value->fixed_assignments = &d_fixed_assignment_space[d_id * psize];
+      // copy node info to device
+      CUDA_RUNTIME(cudaMemcpy(&d_node_space[d_id], h_heap[i].value,
+                              sizeof(node_info), cudaMemcpyHostToDevice));
+      // remap the node info location
+      free(h_heap[i].value);
+      h_heap[i].value = &d_node_space[d_id];
+      cudaMemcpy(d_heap, h_heap.data(), sizeof(NODE) * nelements, cudaMemcpyHostToDevice);
+      // free memory at h_heap[i]
+    }
+    d_size[0] = nelements;
+    h_heap.erase(h_heap.begin(), h_heap.begin() + nelements);
+
+    Log(debug, "Finished moving front to device");
+    // exit(0);
+    // copy heap node value to device
   }
 };
 

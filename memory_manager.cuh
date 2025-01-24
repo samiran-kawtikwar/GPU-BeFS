@@ -19,6 +19,19 @@ __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
   }
 }
 
+// Add free indexes back to memory queue
+__global__ void refill_tail(queue_callee(queue, tickets, head, tail),
+                            uint memory_queue_len,
+                            BHEAP<node> bheap)
+{
+  size_t global_id = blockIdx.x * blockDim.x + threadIdx.x + bheap.d_size[0];
+  if (global_id < bheap.d_trigger_size[0])
+  {
+    uint id = bheap.d_heap[global_id].value->id; // id in node space
+    queue_enqueue(queue, tickets, head, tail, memory_queue_len, id);
+  }
+}
+
 // Should always be called by single block
 __device__ void check_queue(queue_callee(queue, tickets, head, tail),
                             uint len)
