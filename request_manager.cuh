@@ -14,7 +14,7 @@ __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_underflow; // For 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                                      uint32_t queue_size,
-                                     BHEAP<NODE> heap, queue_info *queue_space,
+                                     DHEAP<NODE> heap, queue_info *queue_space,
                                      bool *hold_status)
 {
   __shared__ bool fork, opt_flag, overflow_flag, underflow_flag;
@@ -189,7 +189,7 @@ template <typename NODE>
 __device__ void process_requests(uint INS_LEN,
                                  queue_callee(queue, tickets, head, tail),
                                  uint32_t queue_size,
-                                 BHEAP<NODE> heap, queue_info *queue_space)
+                                 DHEAP<NODE> heap, queue_info *queue_space)
 {
   __shared__ bool fork;
   __shared__ uint qidx, dequeued_idx, count, invalid_count;
@@ -382,7 +382,7 @@ template <typename NODE>
 __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
                                 queue_callee(queue, tickets, head, tail),
                                 uint32_t queue_size,
-                                BHEAP<NODE> heap, queue_info *queue_space)
+                                DHEAP<NODE> heap, queue_info *queue_space)
 {
   if (blockIdx.x == 0)
     process_requests<NODE>(INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, heap, queue_space);

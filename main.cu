@@ -167,8 +167,8 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, nworkers * sizeof(bool)));
   CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
 
-  // Create BHEAP on device
-  BHEAP<node> d_bheap = BHEAP<node>(memory_queue_len, dev_);
+  // Create DHEAP on
+  DHEAP<node> d_bheap = DHEAP<node>(memory_queue_len, dev_);
 
   // Create bnb-stats object on device
   bnb_stats *stats;

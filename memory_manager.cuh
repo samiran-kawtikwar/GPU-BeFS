@@ -22,7 +22,7 @@ __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
 // Add free indexes back to memory queue
 __global__ void refill_tail(queue_callee(queue, tickets, head, tail),
                             uint memory_queue_len,
-                            BHEAP<node> bheap)
+                            DHEAP<node> bheap)
 {
   size_t global_id = blockIdx.x * blockDim.x + threadIdx.x + bheap.d_size[0];
   if (global_id < bheap.d_trigger_size[0])

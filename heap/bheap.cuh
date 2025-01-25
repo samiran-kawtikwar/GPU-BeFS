@@ -9,8 +9,14 @@
 #include <thrust/device_ptr.h>
 #include <thrust/sort.h>
 
+/*
+DHEAP: A device heap implementation
+1. This is a min-heap maintained as an array of NODEs
+2. All heap operations are implemented as device functions: they are NOT thread-safe
+3. Heap operations must be performed by master
+*/
 template <typename NODE>
-class BHEAP
+class DHEAP
 {
 public:
   NODE *d_heap;
@@ -19,7 +25,7 @@ public:
   size_t *d_size_limit;   // max allowed size of the device heap
   size_t *d_trigger_size; // size at which the heap is triggered to move to host
   // Constructors
-  __host__ BHEAP(size_t size_limit, int device_id = 0)
+  __host__ DHEAP(size_t size_limit, int device_id = 0)
   {
     CUDA_RUNTIME(cudaSetDevice(device_id));
     CUDA_RUNTIME(cudaMalloc((void **)&d_heap, sizeof(NODE) * size_limit));
@@ -32,7 +38,7 @@ public:
     d_max_size[0] = 0;
     d_size_limit[0] = size_limit;
   }
-  __device__ BHEAP();
+  __device__ DHEAP();
 
   // Destructors
   __host__ void free_memory()
@@ -139,7 +145,7 @@ public:
 
 // Heap operations: push, pop, batch_push
 template <typename NODE>
-__device__ void pop(BHEAP<NODE> heap, NODE &min)
+__device__ void pop(DHEAP<NODE> heap, NODE &min)
 {
   if (threadIdx.x == 0)
   {
@@ -177,7 +183,7 @@ __device__ void pop(BHEAP<NODE> heap, NODE &min)
 };
 
 template <typename NODE>
-__device__ void push(BHEAP<NODE> bheap, NODE new_node)
+__device__ void push(DHEAP<NODE> bheap, NODE new_node)
 {
   if (threadIdx.x == 0)
   {
@@ -206,7 +212,7 @@ __device__ void push(BHEAP<NODE> bheap, NODE new_node)
 };
 
 template <typename NODE>
-__device__ void batch_push(BHEAP<NODE> heap, NODE *new_nodes, size_t num_nodes)
+__device__ void batch_push(DHEAP<NODE> heap, NODE *new_nodes, size_t num_nodes)
 {
   for (int i = 0; i < num_nodes; i++)
   {
@@ -216,7 +222,7 @@ __device__ void batch_push(BHEAP<NODE> heap, NODE *new_nodes, size_t num_nodes)
 
 // Driver functions
 template <typename NODE>
-__global__ void parse_instr(BHEAP<NODE> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
+__global__ void parse_instr(DHEAP<NODE> heap, d_instruction *ins_list, size_t INS_LEN, size_t MAX_BATCH /*, pass the queue*/)
 {
   if (blockIdx.x == 0)
   {
