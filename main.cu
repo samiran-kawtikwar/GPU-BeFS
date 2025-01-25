@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <cmath>
 #include <vector>
-#include "heap/bheap.cuh"
+#include "heap/dheap.cuh"
 #include "utils/logger.cuh"
 #include "utils/cuda_utils.cuh"
 #include "utils/timer.h"

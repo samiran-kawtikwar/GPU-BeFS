@@ -5,7 +5,7 @@
 #include "queue/queue.cuh"
 #include "defs.cuh"
 #include "utils/logger.cuh"
-#include "heap/bheap.cuh"
+#include "heap/dheap.cuh"
 
 __device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;

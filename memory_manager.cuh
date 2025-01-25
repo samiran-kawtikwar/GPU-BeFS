@@ -5,7 +5,7 @@
 #include "queue/queue.cuh"
 #include "defs.cuh"
 #include "utils/logger.cuh"
-#include "heap/bheap.cuh"
+#include "heap/dheap.cuh"
 
 __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
                                   node_info *node_space,
