@@ -2,6 +2,7 @@
 #include <cmath>
 #include <vector>
 #include "heap/dheap.cuh"
+#include "heap/hheap.cuh"
 #include "utils/logger.cuh"
 #include "utils/cuda_utils.cuh"
 #include "utils/timer.h"

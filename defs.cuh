@@ -40,7 +40,7 @@ const char *ExitCode_text[] = {
     "INFEASIBLE",
     "UNKNOWN_ERROR"};
 
-__device__ __forceinline__ const char *
+__host__ __device__ __forceinline__ const char *
 getTextForEnum(int enumVal)
 {
   return (const char *[]){
