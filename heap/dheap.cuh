@@ -19,32 +19,48 @@ DHEAP: A device heap implementation
 template <typename NODE>
 class DHEAP
 {
+private:
+  uint psize; // problem size
+
 public:
   NODE *d_heap;
+  node_info *d_node_space;
+  int *d_fixed_assignment_space;
   size_t *d_size;         // live size of the device heap
   size_t *d_max_size;     // max size of the device heap during kernel execution
   size_t *d_size_limit;   // max allowed size of the device heap
   size_t *d_trigger_size; // size at which the heap is triggered to move to host
+
   // Constructors
-  __host__ DHEAP(size_t size_limit, int device_id = 0)
+  __host__ DHEAP(size_t size_limit, uint problem_size, int device_id = 0)
   {
+    psize = problem_size;
     CUDA_RUNTIME(cudaSetDevice(device_id));
-    CUDA_RUNTIME(cudaMalloc((void **)&d_heap, sizeof(NODE) * size_limit));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_heap, size_limit * sizeof(NODE)));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, size_limit * sizeof(node_info)));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_fixed_assignment_space, size_limit * psize * sizeof(int)));
+
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_size, sizeof(size_t)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_max_size, sizeof(size_t)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_size_limit, sizeof(size_t)));
     CUDA_RUNTIME(cudaMallocManaged((void **)&d_trigger_size, sizeof(size_t)));
 
+    CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, size_limit * sizeof(node_info)));
+    CUDA_RUNTIME(cudaMemset((void *)d_fixed_assignment_space, 0, size_limit * psize * sizeof(int)));
     CUDA_RUNTIME(cudaMemset(d_size, 0, sizeof(size_t)));
     d_max_size[0] = 0;
     d_size_limit[0] = size_limit;
   }
+
   __device__ DHEAP();
 
   // Destructors
   __host__ void free_memory()
   {
     CUDA_RUNTIME(cudaFree(d_heap));
+    CUDA_RUNTIME(cudaFree(d_node_space));
+    CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
+
     CUDA_RUNTIME(cudaFree(d_size));
     CUDA_RUNTIME(cudaFree(d_max_size));
     CUDA_RUNTIME(cudaFree(d_size_limit));
@@ -66,17 +82,14 @@ public:
     printf("\n");
   }
 
+  // sort d_heap in ascending order with thrust
   void sort()
   {
     Log(info, "Sorting the heap");
-    // sort d_heap in ascending order with thrust
     if (d_size[0] != 0)
     {
-      // Use thrust::device_ptr to wrap the device memory
       thrust::device_ptr<NODE> dev_ptr(d_heap);
-      // Call thrust::sort to sort the heap in-place
       thrust::sort(dev_ptr, dev_ptr + d_size[0]);
-      // copy the sorted heap back to host
     }
   }
 
@@ -92,17 +105,24 @@ public:
   }
 
   // This function is used to move the later half of the heap to host to free up space on device
-  void move_tail(HHEAP<NODE> &h_bheap, const float frac, const uint psize)
+  void move_tail(HHEAP<NODE> &h_bheap, const float frac)
   {
+    Log(info, "Launching move tail");
     auto &h_heap = h_bheap.heap;
+    auto &h_node_space = h_bheap.node_space;
+    auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     Log(debug, "Moving tail to host");
     d_trigger_size[0] = d_size[0];
     uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
     uint last = d_size[0] - nelements;
-    NODE *temp_heap = (NODE *)malloc(sizeof(NODE) * nelements);
-    CUDA_RUNTIME(cudaMemcpy(temp_heap, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
     d_size[0] = last;
-    h_heap.insert(h_heap.end(), temp_heap, temp_heap + nelements);
+
+    h_heap.resize(h_bheap.size + nelements);
+    // h_node_space.resize(h_bheap.size + nelements);
+    // h_fixed_assignment_space.resize(h_bheap.size + nelements * psize);
+    auto correct_ptr = h_heap.data() + h_bheap.size;
+    CUDA_RUNTIME(cudaMemcpy(correct_ptr, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
+
     // copy heap node values to host; can do this in parallel with cpu threads
     for (size_t i = 0; i < nelements; i++)
     {
@@ -110,26 +130,22 @@ public:
       node_info *temp_node = (node_info *)malloc(sizeof(node_info));
       int *temp_fa = (int *)malloc(psize * sizeof(int));
       // copy corresponding device pointer to host
-      CUDA_RUNTIME(cudaMemcpy(temp_node, temp_heap[i].value, sizeof(node_info), cudaMemcpyDeviceToHost));
+      CUDA_RUNTIME(cudaMemcpy(temp_node, h_heap[h_heap.size() - nelements + i].value, sizeof(node_info), cudaMemcpyDeviceToHost));
       CUDA_RUNTIME(cudaMemcpy(temp_fa, temp_node->fixed_assignments, psize * sizeof(int), cudaMemcpyDeviceToHost));
       temp_node->fixed_assignments = temp_fa;
-      h_heap[i].value = temp_node;
-      h_heap[i].location = HOST;
+      h_heap[h_heap.size() - nelements + i].value = temp_node;
+      h_heap[h_heap.size() - nelements + i].location = HOST;
     }
     h_bheap.update_size();
     Log(info, "Host heap size: %lu", h_bheap.size);
-    // clear the memory on host
-    free(temp_heap);
-    // Log(warn, "Host best key: %f", h_heap[0].key);
   }
 
   // Move the first half of the host heap to device
   void move_front(HHEAP<NODE> &h_bheap,
                   const uint *id,
-                  int *d_fixed_assignment_space,
-                  node_info *d_node_space,
-                  const uint nelements, const uint psize)
+                  const uint nelements)
   {
+    Log(info, "Launching move front");
     auto &h_heap = h_bheap.heap;
     assert(d_size[0] == 0);
     // print();

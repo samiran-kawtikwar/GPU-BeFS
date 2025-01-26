@@ -148,28 +148,21 @@ int main(int argc, char **argv)
   size_t memory_queue_len = 150;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
-  // Create space for node_info
-  node_info *d_node_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_node_space, memory_queue_len * sizeof(node_info)));
-  CUDA_RUNTIME(cudaMemset((void *)d_node_space, 0, memory_queue_len * sizeof(node_info)));
-  // space for fixed assignments in node_info
-  int *d_fixed_assignment_space;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_fixed_assignment_space, memory_queue_len * psize * sizeof(int)));
-  CUDA_RUNTIME(cudaMemset((void *)d_fixed_assignment_space, 0, memory_queue_len * psize * sizeof(int)));
+  // Create DHEAP
+  DHEAP<node> d_bheap = DHEAP<node>(memory_queue_len, psize, dev_);
+  // node_info *d_node_space = d_bheap.d_node_space;
+  // int *d_fixed_assignment_space = d_bheap.d_fixed_assignment_space;
 
   // Set fixed assignment pointers to d_fixed_assignment_space
   uint block_dimension = 1024;
   uint grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (memory_queue_len - 1) / block_dimension + 1);
   execKernel(set_fixed_assignment_pointers, grid_dimension, block_dimension, dev_, true,
-             d_node_space, d_fixed_assignment_space, psize, memory_queue_len);
+             d_bheap.d_node_space, d_bheap.d_fixed_assignment_space, psize, memory_queue_len);
 
   // create space for hold_status
   bool *d_hold_status; // Managed by Workers
   CUDA_RUNTIME(cudaMalloc((void **)&d_hold_status, nworkers * sizeof(bool)));
   CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
-
-  // Create DHEAP on
-  DHEAP<node> d_bheap = DHEAP<node>(memory_queue_len, dev_);
 
   // Create bnb-stats object on device
   bnb_stats *stats;
@@ -195,15 +188,15 @@ int main(int argc, char **argv)
 
   // Populate memory queue and node_space IDs
   execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
-             queue_caller(memory_queue, tickets, head, tail), d_node_space,
+             queue_caller(memory_queue, tickets, head, tail), d_bheap.d_node_space,
              memory_queue_len);
   execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_node_space, d_problem_info,
+             d_bheap, d_problem_info,
              queue_caller(request_queue, tickets, head, tail), nworkers,
-             d_queue_space, d_worker_space, d_bheap,
+             d_queue_space, d_worker_space,
              d_hold_status, UB);
 
   cuProfilerStart();
@@ -215,9 +208,9 @@ int main(int argc, char **argv)
   {
     execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
                queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-               d_node_space, d_subgrad_space, d_problem_info,
+               d_bheap, d_subgrad_space, d_problem_info,
                queue_caller(request_queue, tickets, head, tail), nworkers,
-               d_queue_space, d_worker_space, d_bheap,
+               d_queue_space, d_worker_space,
                d_hold_status,
                UB, stats);
     execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
@@ -234,7 +227,7 @@ int main(int argc, char **argv)
         // sort the heap and move to cpu
         d_bheap.standardize();
         Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
-        d_bheap.move_tail(h_bheap, 0.5, psize);
+        d_bheap.move_tail(h_bheap, 0.5);
         // Enqueue the deleted half in memory manager
         Log(info, "Heap size post move: %lu", d_bheap.d_size[0]);
         size_t tail_size = d_bheap.d_trigger_size[0] - d_bheap.d_size[0];
@@ -258,7 +251,7 @@ int main(int argc, char **argv)
         CUDA_RUNTIME(cudaMemcpy(h_dev_addresses, d_dev_addresses, nelements * sizeof(uint), cudaMemcpyDeviceToHost));
         cudaFree(d_dev_addresses);
         CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, h_bheap.size * sizeof(int)));
-        d_bheap.move_front(h_bheap, h_dev_addresses, d_fixed_assignment_space, d_node_space, nelements, psize);
+        d_bheap.move_front(h_bheap, h_dev_addresses, nelements);
         // delete h_dev_addresses
         free(h_dev_addresses);
       }
@@ -296,8 +289,6 @@ int main(int argc, char **argv)
   // Free device memory
   d_bheap.free_memory();
   CUDA_RUNTIME(cudaFree(d_queue_space));
-  CUDA_RUNTIME(cudaFree(d_node_space));
-  CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
   CUDA_RUNTIME(cudaFree(d_problem_info->costs));
   CUDA_RUNTIME(cudaFree(d_problem_info->weights));

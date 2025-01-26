@@ -13,9 +13,9 @@
 namespace cg = cooperative_groups;
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                  node_info *node_space, const problem_info *pinfo,
+                                  DHEAP<node> bheap, const problem_info *pinfo,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                                  queue_info *queue_space, worker_info *work_space, DHEAP<node> bheap,
+                                  queue_info *queue_space, worker_info *work_space,
                                   bool *hold_status, const cost_type UB)
 {
   const uint bId = blockIdx.x, psize = pinfo->psize;
@@ -76,7 +76,7 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
         if (local_id == 0)
         {
           uint my_index = atomicAdd(&child_index, 1);
-          b[tile_id] = &node_space[my_addresses[my_index]];
+          b[tile_id] = &bheap.d_node_space[my_addresses[my_index]];
           b[tile_id]->LB = my_space->LB[child_id];
           b[tile_id]->level = my_space->level[child_id];
           a[my_index].value = b[tile_id];
@@ -124,9 +124,9 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
 // Add launch bounds
 __launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                   node_info *node_space, subgrad_space *subgrad_space, const problem_info *pinfo,
+                                   DHEAP<node> bheap, subgrad_space *subgrad_space, const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                                   queue_info *queue_space, worker_info *work_space, DHEAP<node> bheap,
+                                   queue_info *queue_space, worker_info *work_space,
                                    bool *hold_status,
                                    const cost_type global_UB,
                                    bnb_stats *stats)
@@ -349,7 +349,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             if (my_space->feasible[i])
             {
               uint ind = atomicAdd(&index, 1);
-              node_info *b = &node_space[my_addresses[ind]];
+              node_info *b = &bheap.d_node_space[my_addresses[ind]];
               b->LB = my_space->LB[i];
               b->level = my_space->level[i];
               for (uint j = 0; j < psize; j++)
