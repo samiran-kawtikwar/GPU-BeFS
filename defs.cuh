@@ -34,13 +34,19 @@ enum ExitCode
   UNKNOWN_ERROR
 };
 
+enum Location
+{
+  HOST = -1,
+  DEVICE
+};
+
 const char *ExitCode_text[] = {
     "OPTIMAL",
     "HEAP_FULL",
     "INFEASIBLE",
     "UNKNOWN_ERROR"};
 
-__host__ __device__ __forceinline__ const char *
+__device__ __forceinline__ const char *
 getTextForEnum(int enumVal)
 {
   return (const char *[]){
@@ -86,9 +92,19 @@ struct node_info
 struct node
 {
   float key;
+  Location location; // To identify where the value is stored
   node_info *value;
   __host__ __device__ node() {};
-  __host__ __device__ node(float a, node_info *b) : key(a), value(b) {};
+  __host__ __device__ node(float a, node_info *b)
+  {
+    key = a;
+#ifdef __CUDA_ARCH__
+    location = DEVICE; // Compiling for device
+#else
+    location = HOST; // Compiling for host
+#endif
+    value = b;
+  }
 
   // Comparison operator
   __host__ __device__ bool operator<(const node &other) const

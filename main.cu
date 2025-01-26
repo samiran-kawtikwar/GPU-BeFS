@@ -184,7 +184,7 @@ int main(int argc, char **argv)
   Log(debug, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
 
   // create a vector on host for dumping heap tails
-  std::vector<node> h_heap;
+  HHEAP<node> h_bheap = HHEAP<node>(psize);
 
 #ifdef TIMER
   allocateCounters(&counters, nworkers);
@@ -226,16 +226,15 @@ int main(int argc, char **argv)
     Log(debug, "Heap size at termination: %lu", d_bheap.d_size[0]);
     // d_bheap.print_size();
     execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
-    if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_heap.size() > 0))
+    Log(info, "Host heap size: %lu", h_bheap.size);
+    if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
       if (exit_code == HEAP_FULL)
       {
         // sort the heap and move to cpu
-        // d_bheap.print();
-        d_bheap.sort();
-        // d_bheap.print();
+        d_bheap.standardize();
         Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
-        d_bheap.move_tail(h_heap, 0.5, psize);
+        d_bheap.move_tail(h_bheap, 0.5, psize);
         // Enqueue the deleted half in memory manager
         Log(info, "Heap size post move: %lu", d_bheap.d_size[0]);
         size_t tail_size = d_bheap.d_trigger_size[0] - d_bheap.d_size[0];
@@ -247,7 +246,8 @@ int main(int argc, char **argv)
       }
       else if (exit_code == INFEASIBLE)
       {
-        uint nelements = min(h_heap.size(), d_bheap.d_size_limit[0] / 2);
+        Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
+        uint nelements = min(h_bheap.size, d_bheap.d_size_limit[0] / 2);
         Log(info, "Moving %u elements to device", nelements);
         uint *d_dev_addresses;
         CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, nelements * sizeof(uint)));
@@ -257,8 +257,8 @@ int main(int argc, char **argv)
                    memory_queue_len, nelements, d_dev_addresses);
         CUDA_RUNTIME(cudaMemcpy(h_dev_addresses, d_dev_addresses, nelements * sizeof(uint), cudaMemcpyDeviceToHost));
         cudaFree(d_dev_addresses);
-        CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, h_heap.size() * sizeof(int)));
-        d_bheap.move_front(h_heap, h_dev_addresses, d_fixed_assignment_space, d_node_space, nelements, psize);
+        CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, h_bheap.size * sizeof(int)));
+        d_bheap.move_front(h_bheap, h_dev_addresses, d_fixed_assignment_space, d_node_space, nelements, psize);
         // delete h_dev_addresses
         free(h_dev_addresses);
       }

@@ -6,6 +6,7 @@
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
+#include "hheap.cuh"
 #include <thrust/device_ptr.h>
 #include <thrust/sort.h>
 
@@ -79,9 +80,22 @@ public:
     }
   }
 
-  void move_tail(std::vector<NODE> &h_heap, const float frac, const uint psize)
+  /* Convert the heap into standard format, defined as:
+  1. The heap is sorted in ascending order of keys
+  2. The heap node values in device memory are in a continuous order:
+      i.e. d_heap[i].value at location d_node_space[i] for all i < d_size
+  This format would allow efficient batch operations on the heap when the heap is moved to host
+  */
+  void standardize()
   {
-    // This function is used to move the later half of the heap to host to free up space on device
+    sort(); // sort the heap
+  }
+
+  // This function is used to move the later half of the heap to host to free up space on device
+  void move_tail(HHEAP<NODE> &h_bheap, const float frac, const uint psize)
+  {
+    auto &h_heap = h_bheap.heap;
+    Log(debug, "Moving tail to host");
     d_trigger_size[0] = d_size[0];
     uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
     uint last = d_size[0] - nelements;
@@ -90,7 +104,6 @@ public:
     d_size[0] = last;
     h_heap.insert(h_heap.end(), temp_heap, temp_heap + nelements);
     // copy heap node values to host; can do this in parallel with cpu threads
-    // #pragma omp parallel for
     for (size_t i = 0; i < nelements; i++)
     {
       // create memory for node_info
@@ -101,19 +114,23 @@ public:
       CUDA_RUNTIME(cudaMemcpy(temp_fa, temp_node->fixed_assignments, psize * sizeof(int), cudaMemcpyDeviceToHost));
       temp_node->fixed_assignments = temp_fa;
       h_heap[i].value = temp_node;
+      h_heap[i].location = HOST;
     }
+    h_bheap.update_size();
+    Log(info, "Host heap size: %lu", h_bheap.size);
     // clear the memory on host
     free(temp_heap);
     // Log(warn, "Host best key: %f", h_heap[0].key);
   }
 
   // Move the first half of the host heap to device
-  void move_front(std::vector<NODE> &h_heap,
+  void move_front(HHEAP<NODE> &h_bheap,
                   const uint *id,
                   int *d_fixed_assignment_space,
                   node_info *d_node_space,
                   const uint nelements, const uint psize)
   {
+    auto &h_heap = h_bheap.heap;
     assert(d_size[0] == 0);
     // print();
     for (size_t i = 0; i < nelements; i++)

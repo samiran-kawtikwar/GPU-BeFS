@@ -15,9 +15,9 @@ template <typename NODE>
 class HHEAP
 {
 public:
-  std::vector<NODE> h_heap;
-  std::vector<node_info> h_node_space;
-  std::vector<int> h_fixed_assignment_space;
+  std::vector<NODE> heap;
+  std::vector<node_info> node_space;
+  std::vector<int> fixed_assignment_space;
   uint psize;       // problem size
   size_t size;      // live size of the host heap
   size_t footprint; // Live memory footprint of the heap with all its node associated data
@@ -28,30 +28,35 @@ public:
     psize = problem_size;
     size = 0;
     footprint = 0;
-    h_heap = std::vector<NODE>();
-    h_node_space = std::vector<node_info>();
-    h_fixed_assignment_space = std::vector<int>();
+    heap = std::vector<NODE>();
+    node_space = std::vector<node_info>();
+    fixed_assignment_space = std::vector<int>();
   }
 
   // Destructors
   __host__ void cleanup()
   {
-    h_heap.clear();
-    h_node_space.clear();
-    h_fixed_assignment_space.clear();
+    heap.clear();
+    node_space.clear();
+    fixed_assignment_space.clear();
   }
 
   void update_footprint()
   {
     footprint = 0;
-    footprint += h_heap.size() * sizeof(NODE);
-    footprint += h_node_space.size() * sizeof(node_info);
-    footprint += h_fixed_assignment_space.size() * psize * sizeof(int);
+    footprint += heap.size() * sizeof(NODE);
+    footprint += node_space.size() * sizeof(node_info);
+    footprint += fixed_assignment_space.size() * psize * sizeof(int);
+  }
+
+  void update_size()
+  {
+    size = heap.size();
   }
 
   // Sort in ascending order
   void sort()
   {
-    std::sort(std::execution::par, h_heap.begin(), h_heap.end());
+    std::sort(std::execution::par, heap.begin(), heap.end());
   }
 };
