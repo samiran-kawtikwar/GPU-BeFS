@@ -1,5 +1,5 @@
-GCC ?= /usr/bin/gcc-11
-NVCC ?= nvcc -ccbin $(GCC)
+GCC ?= gcc
+NVCC ?= nvcc
 
 ARCH := $(shell ~/get_SM.sh)
 BUILD_DIR ?=./build

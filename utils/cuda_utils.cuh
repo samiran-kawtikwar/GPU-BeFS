@@ -9,17 +9,6 @@
     cudaDeviceSynchronize();              \
   }
 
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = false)
-{
-
-  if (code != cudaSuccess)
-  {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-
-    /*if (abort) */ exit(1);
-  }
-}
-
 #define execKernel(kernel, gridSize, blockSize, deviceId, verbose, ...)                       \
   {                                                                                           \
     dim3 grid(gridSize);                                                                      \
@@ -31,3 +20,21 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     kernel<<<grid, block>>>(__VA_ARGS__);                                                     \
     CUDA_RUNTIME(cudaGetLastError());                                                         \
   }
+
+#define assert_d(X)                                           \
+  if (!(X))                                                   \
+  {                                                           \
+    printf("Assertion failed: %s, %d\n", __FILE__, __LINE__); \
+    return;                                                   \
+  }
+
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = false)
+{
+
+  if (code != cudaSuccess)
+  {
+    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+
+    /*if (abort) */ exit(1);
+  }
+}
