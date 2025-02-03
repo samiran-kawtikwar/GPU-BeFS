@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include "../utils/cuda_utils.cuh"
 // #define __DEBUG__
 #define DEBUG_D
 
@@ -128,12 +129,9 @@ __forceinline__ __device__ void DLog(LogPriorityEnum l, const char *f, Args... a
 }
 
 template <typename cost_type = int>
-void printDeviceArray(const cost_type *d_array, size_t len, std::string name = NULL)
+void printHostArray(const cost_type *h_array, size_t len, std::string name = NULL)
 {
-
   using namespace std;
-  cost_type *temp = new cost_type[len];
-
   if (name != "NULL")
   {
     if (len < 1)
@@ -143,30 +141,34 @@ void printDeviceArray(const cost_type *d_array, size_t len, std::string name = N
   }
   if (len >= 1)
   {
-    CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(cost_type), cudaMemcpyDefault));
     for (size_t i = 0; i < len - 1; i++)
     {
-      cout << temp[i] << ',';
+      cout << h_array[i] << ',';
     }
-    cout << temp[len - 1] << '.' << endl;
+    cout << h_array[len - 1] << '.' << endl;
   }
+}
+
+template <typename cost_type = int>
+void printDeviceArray(const cost_type *d_array, size_t len, std::string name = NULL)
+{
+  cost_type *temp = new cost_type[len];
+  CUDA_RUNTIME(cudaMemcpy(temp, d_array, len * sizeof(cost_type), cudaMemcpyDefault));
+  printHostArray<cost_type>(temp, len, name);
   delete[] temp;
 }
 
-template <typename cost_type = uint>
-void printDeviceMatrix(const cost_type *array, size_t nrows, size_t ncols, std::string name = NULL)
+template <typename cost_type = int>
+void printHostMatrix(const cost_type *array, size_t nrows, size_t ncols, std::string name = NULL)
 {
   using namespace std;
-  cost_type *temp = new cost_type[nrows * ncols];
-  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(cost_type), cudaMemcpyDefault));
-
   if (name != "NULL")
   {
     Log(debug, "%s", name.c_str());
   }
   for (size_t j = 0; j < nrows; j++)
   {
-    cost_type *temp2 = &temp[j * ncols];
+    const cost_type *temp2 = &array[j * ncols];
     for (size_t i = 0; i < ncols - 1; i++)
     {
       cout << temp2[i] << ", ";
@@ -178,5 +180,13 @@ void printDeviceMatrix(const cost_type *array, size_t nrows, size_t ncols, std::
     //     cout << "Problem at row: " << i << " assignment: " << temp2[i] << endl;
     // }
   }
+}
+
+template <typename cost_type = uint>
+void printDeviceMatrix(const cost_type *array, size_t nrows, size_t ncols, std::string name = NULL)
+{
+  cost_type *temp = new cost_type[nrows * ncols];
+  CUDA_RUNTIME(cudaMemcpy(temp, array, nrows * ncols * sizeof(cost_type), cudaMemcpyDefault));
+  printHostMatrix<cost_type>(temp, nrows, ncols, name);
   delete[] temp;
 }
