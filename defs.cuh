@@ -1,5 +1,6 @@
 #pragma once
 #include "queue/queue.cuh"
+#include "utils/cuda_utils.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
@@ -87,6 +88,18 @@ struct node_info
   uint id; // For mapping with memory queue; DON'T UPDATE
   __host__ __device__ node_info() {};
   __host__ __device__ node_info(int *fa, float lb, uint lvl, uint address = 0) : fixed_assignments(fa), LB(lb), level(lvl), id(address) {};
+  __host__ node_info(uint psize)
+  {
+    fixed_assignments = new int[psize];
+  }
+  void clear()
+  {
+    if (fixed_assignments)
+    {
+      delete[] fixed_assignments;
+      fixed_assignments = nullptr;
+    }
+  }
 };
 
 struct node
