@@ -4,7 +4,8 @@
 #include <string>
 #include "../utils/cuda_utils.cuh"
 // #define __DEBUG__
-#define DEBUG_D
+// #define LOG_D
+// #define DEBUG_D
 
 namespace logger
 {
@@ -87,16 +88,16 @@ __host__ __forceinline__ void Log(LogPriorityEnum l, const char *f, Args... args
 template <typename... Args>
 __forceinline__ __device__ void DLog(LogPriorityEnum l, const char *f, Args... args)
 {
-#ifdef DEBUG_D
+#ifdef LOG_D
   {
     bool print = true;
     static int logging_flag = int(false);
-#ifndef __DEBUG__
+#ifndef DEBUG_D
     if (l == debug)
     {
       print = false;
     }
-#endif // __DEBUG__
+#endif // __DEBUG__D
 
     if (print)
     {
@@ -107,10 +108,10 @@ __forceinline__ __device__ void DLog(LogPriorityEnum l, const char *f, Args... a
         {
 
           // Line Color Set
-          const char *prefix = (l == debug)                    ? "\033[1;34m" // blue
-                               : (l == info)                   ? "\033[1;32m" // green
-                               : (l == warn)                   ? "\033[1;33m" // brown
-                               : (l == error || l == critical) ? "\033[1;31m" // red
+          const char *prefix = (l == debug)                    ? "\033[3;34m" // blue
+                               : (l == info)                   ? "\033[3;32m" // green
+                               : (l == warn)                   ? "\033[3;33m" // brown
+                               : (l == error || l == critical) ? "\033[3;31m" // red
                                                                : "\033[0m";   // default
 
           printf(prefix);
