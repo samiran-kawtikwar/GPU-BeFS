@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <cmath>
 #include <vector>
-#include "heap/dheap.cuh"
+#include "heap/dheap_extended.cuh"
 #include "heap/hheap.cuh"
 #include "utils/logger.cuh"
 #include "utils/cuda_utils.cuh"
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP
-  DHEAP<node> d_bheap = DHEAP<node>(memory_queue_len, psize, dev_);
+  DHEAPExtended<node> d_bheap(memory_queue_len, psize, dev_);
   // node_info *d_node_space = d_bheap.d_node_space;
   // int *d_fixed_assignment_space = d_bheap.d_fixed_assignment_space;
 
