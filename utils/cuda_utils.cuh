@@ -25,7 +25,7 @@
   if (!(X))                                                   \
   {                                                           \
     printf("Assertion failed: %s, %d\n", __FILE__, __LINE__); \
-    return;                                                   \
+    assert(X);                                                \
   }
 
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = false)
@@ -37,4 +37,13 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 
     /*if (abort) */ exit(1);
   }
+}
+
+// Wrapper using atomicAdd to perform an atomic read.
+template <typename T = int>
+__device__ __forceinline__ T atomicRead(T *addr)
+{
+  // We cast away the const because the CUDA atomic functions require a non-const pointer.
+  // The addition of T(0) is guaranteed to leave the value unchanged.
+  return atomicAdd(addr, static_cast<T>(0));
 }
