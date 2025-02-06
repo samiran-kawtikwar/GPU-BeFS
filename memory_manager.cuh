@@ -9,13 +9,47 @@
 
 __global__ void fill_memory_queue(queue_callee(queue, tickets, head, tail),
                                   node_info *node_space,
-                                  uint memory_queue_len)
+                                  uint memory_queue_len,
+                                  const uint start = 0)
 {
   uint id = blockIdx.x * blockDim.x + threadIdx.x;
-  if (id < memory_queue_len)
+  if (id == 0)
   {
-    queue_enqueue(queue, tickets, head, tail, memory_queue_len, id);
+    head_queue->store(start, cuda::memory_order_release);
+    tail_queue->store(memory_queue_len, cuda::memory_order_release);
+  }
+  while (id < memory_queue_len)
+  {
     node_space[id].id = id;
+    if (id < start)
+      tickets_queue[id].store(2, cuda::memory_order_release);
+    else
+    {
+      tickets_queue[id].store(1, cuda::memory_order_release);
+      queue[id] = queue_type(id);
+    }
+    id += gridDim.x * blockDim.x;
+  }
+}
+
+__global__ void empty_memory_queue(queue_callee(queue, tickets, head, tail),
+                                   uint memory_queue_len,
+                                   const uint nelements)
+{
+  __shared__ bool fork;
+  __shared__ uint qidx, dequeued_idx;
+  if (threadIdx.x == 0 && blockIdx.x == 0)
+  {
+    queue_dequeue(queue, tickets, head, tail, memory_queue_len, fork, qidx, nelements);
+    if (fork)
+    {
+      for (uint iter = 0; iter < nelements; iter++)
+      {
+        queue_wait_ticket(queue, tickets, head, tail, memory_queue_len, qidx, dequeued_idx);
+        qidx++;
+        printf("dequeued: %u\n", dequeued_idx);
+      }
+    }
   }
 }
 
@@ -30,6 +64,30 @@ __global__ void refill_tail(queue_callee(queue, tickets, head, tail),
     uint id = bheap.d_heap[global_id].value->id; // id in node space
     queue_enqueue(queue, tickets, head, tail, memory_queue_len, id);
   }
+}
+
+void refresh_queue(queue_callee(queue, tickets, head, tail),
+                   node_info *node_space,
+                   uint memory_queue_len,
+                   DHEAPExtended<node> bheap,
+                   uint dev_ = 0)
+{
+  // Reset queue
+  queue_reset(queue, tickets, head, tail, memory_queue_len);
+  // Fill queue
+  int block_dim = 1024;
+  uint start = bheap.d_size[0];
+  int grid_dim = (memory_queue_len + block_dim - 1) / block_dim;
+  execKernel(fill_memory_queue, grid_dim, block_dim, dev_, false,
+             queue_caller(queue, tickets, head, tail), node_space, memory_queue_len, start);
+
+  // // Dequeue first start elements
+  // block_dim = 1;
+  // grid_dim = 1;
+  // execKernel(print_queue_status, grid_dim, block_dim, dev_, false,
+  //            queue_caller(queue, tickets, head, tail), memory_queue_len);
+  // execKernel(empty_memory_queue, grid_dim, block_dim, dev_, false,
+  //            queue_caller(queue, tickets, head, tail), memory_queue_len, start);
 }
 
 // Should always be called by single block
