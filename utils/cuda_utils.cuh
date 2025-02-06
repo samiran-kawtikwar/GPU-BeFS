@@ -6,7 +6,6 @@
 #define CUDA_RUNTIME(ans)                 \
   {                                       \
     gpuAssert((ans), __FILE__, __LINE__); \
-    cudaDeviceSynchronize();              \
   }
 
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = false)
@@ -29,5 +28,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     if (verbose)                                                                              \
       Log(info, "Launching %s with nblocks: %u, blockDim: %u", #kernel, gridSize, blockSize); \
     kernel<<<grid, block>>>(__VA_ARGS__);                                                     \
+    CUDA_RUNTIME(cudaDeviceSynchronize());                                                    \
     CUDA_RUNTIME(cudaGetLastError());                                                         \
   }
