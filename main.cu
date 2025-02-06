@@ -225,7 +225,7 @@ int main(int argc, char **argv)
       if (exit_code == HEAP_FULL)
       {
         // sort the heap and move to cpu
-        d_bheap.standardize();
+        d_bheap.standardize(nworkers);
         Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
         d_bheap.move_tail(h_bheap, 0.5);
         // Enqueue the deleted half in memory manager

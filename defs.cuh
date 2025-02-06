@@ -233,6 +233,12 @@ enum RequestStatus
   INVALID
 };
 
+enum LockStatus
+{
+  SUCCESS = 0,
+  GIVE_UP
+};
+
 const char *CounterName_text[] = {
     "INIT",
     "QUEUING",
