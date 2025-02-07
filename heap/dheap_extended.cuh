@@ -144,10 +144,13 @@ public:
     auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     Log(debug, "Moving tail to host");
     d_trigger_size[0] = d_size[0];
+    format_print("Before moving tail");
     uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
     uint last = d_size[0] - nelements;
     d_size[0] = last;
 
+    Log(debug, "Trigger size: %lu", d_trigger_size[0]);
+    Log(debug, "Moving... last: %u, nelements", last, nelements);
     h_heap.resize(h_bheap.size + nelements);
     // h_node_space.resize(h_bheap.size + nelements);
     // h_fixed_assignment_space.resize(h_bheap.size + nelements * psize);
@@ -169,6 +172,7 @@ public:
     }
     h_bheap.update_size();
     Log(info, "Host heap size: %lu", h_bheap.size);
+    format_print("After moving tail");
   }
 
   // Move the first half of the host heap to device

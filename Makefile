@@ -14,7 +14,7 @@ CU_OBJ_FILES := $(patsubst %.cu,$(BUILD_DIR)/obj/%.cu.o,$(notdir $(CU_FILES)))
 CPP_OBJ_FILES := $(patsubst %.cpp,$(BUILD_DIR)/obj/%.cpp.o,$(CPP_FILES))
 
 # cpp flags
-CPPFLAGS ?= -g -O3 -fopenmp -Wno-format-security -std=c++17
+CPPFLAGS ?= -g -O3 -fopenmp -Wno-format-security -Wno-format-zero-length -std=c++17
 CPPINC ?= -I${GUROBI_HOME}/include
 LDIR_CPP ?= -L${GUROBI_HOME}/lib
 LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110 -lm -lstdc++
