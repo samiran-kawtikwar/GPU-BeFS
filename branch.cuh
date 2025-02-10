@@ -380,7 +380,10 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                       queue_caller(request_queue, tickets, head, tail),
                       request_queue_size, queue_space);
         if (threadIdx.x == 0)
-          DLog(debug, "Block %u ran out of space, pushing back the node\n", blockIdx.x);
+        {
+          DLog(debug, "Block %u ran out, pushing back node id: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->id);
+          heap_overflow.store(true, cuda::memory_order_release);
+        }
       }
       __syncthreads();
       END_TIME(QUEUING);

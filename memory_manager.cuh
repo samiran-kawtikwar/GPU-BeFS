@@ -159,7 +159,6 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
         if (size < n_tokens)
         {
           DLog(debug, "no space for block %u: available: %u, needed: %u\n", blockIdx.x, size, n_tokens);
-          heap_overflow.store(true, cuda::memory_order_release);
           *overflow_flag = true;
         }
       }
@@ -168,7 +167,7 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
     // sleep block here if needed
   }
   if (threadIdx.x == 0 && !*overflow_flag)
-    DLog(debug, "Block %u got memory\n", blockIdx.x, n_tokens);
+    DLog(debug, "Block %u got %u tokens: --> %u ,...\n", blockIdx.x, n_tokens, dequeued_idx[0]);
 }
 
 // Should always be called by single block
