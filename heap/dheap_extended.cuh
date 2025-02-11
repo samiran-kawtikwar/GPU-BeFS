@@ -144,7 +144,7 @@ public:
     auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     Log(debug, "Moving tail to host");
     d_trigger_size[0] = d_size[0];
-    format_print("Before moving tail");
+    // format_print("Before moving tail");
     uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
     uint last = d_size[0] - nelements;
     d_size[0] = last;
@@ -167,12 +167,14 @@ public:
       CUDA_RUNTIME(cudaMemcpy(temp_node, h_heap[h_heap.size() - nelements + i].value, sizeof(node_info), cudaMemcpyDeviceToHost));
       CUDA_RUNTIME(cudaMemcpy(temp_fa, temp_node->fixed_assignments, psize * sizeof(int), cudaMemcpyDeviceToHost));
       temp_node->fixed_assignments = temp_fa;
-      h_heap[h_heap.size() - nelements + i].value = temp_node;
-      h_heap[h_heap.size() - nelements + i].location = HOST;
+      temp_node->id = h_bheap.size + i;
+      h_heap[h_bheap.size + i].value = temp_node;
+      h_heap[h_bheap.size + i].location = HOST;
     }
     h_bheap.update_size();
     Log(info, "Host heap size: %lu", h_bheap.size);
-    format_print("After moving tail");
+    // format_print("After moving tail");
+    // h_bheap.print("Host heap");
   }
 
   // Move the first half of the host heap to device
@@ -378,7 +380,7 @@ __global__ void rearrange(DHEAP<NODE> heap, int *where, int *visited, node_info 
     if (threadIdx.x == 0)
     {
       where_status = atomicRead(&where[my_dest]);
-      DLog(info, "Block: %lu, my_id: %d, my_dest: %d, where[dest] %d\n", i, my_id, my_dest, where_status);
+      DLog(debug, "Block: %lu, my_id: %d, my_dest: %d, where[dest] %d\n", i, my_id, my_dest, where_status);
     }
     __syncthreads();
     if (my_id == my_dest) // case 1: no need to move
