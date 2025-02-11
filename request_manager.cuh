@@ -390,6 +390,23 @@ __global__ void request_manager(d_instruction *ins_list, size_t INS_LEN,
     generate_requests<NODE>(ins_list, INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, queue_space);
 }
 
+template <typename NODE>
+__global__ void finish_requests(queue_callee(queue, tickets, head, tail),
+                                uint32_t queue_size,
+                                DHEAP<NODE> heap, queue_info *queue_space)
+{
+  if (blockIdx.x == 0)
+  {
+    __shared__ size_t INS_LEN;
+    if (threadIdx.x == 0)
+    {
+      INS_LEN = (size_t)tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
+    }
+    __syncthreads();
+    process_requests<NODE>(INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, heap, queue_space);
+  }
+}
+
 __device__ bool wait_for_pop(queue_info *queue_space)
 {
   uint ns = 8;

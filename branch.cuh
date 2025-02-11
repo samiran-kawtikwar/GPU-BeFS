@@ -338,7 +338,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         if (!overflow_flag)
         {
           // if (threadIdx.x == 0)
-          //   DLog(warn, "Block %u got memory\n", blockIdx.x, nchild_feas);
+          //   DLog(warn, "Block %u got %u tokens\n", blockIdx.x, nchild_feas);
           node *a = my_space->nodes;
           __shared__ uint index; // Ownership: Block
           if (threadIdx.x == 0)

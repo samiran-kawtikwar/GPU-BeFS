@@ -217,8 +217,17 @@ int main(int argc, char **argv)
     CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
     Log(critical, "Exit code: %s", ExitCode_text[exit_code]);
     Log(debug, "Heap size at termination: %lu", d_bheap.d_size[0]);
-    // d_bheap.print_size();
+    Log(info, "Printing request queue status");
+    execKernel(print_queue_status, 1, 1, dev_, false,
+               queue_caller(request_queue, tickets, head, tail), memory_queue_len);
+
+    // Finish all requests in the request queue
+    execKernel(finish_requests, 1, 32, dev_, true,
+               queue_caller(request_queue, tickets, head, tail), nworkers, d_bheap, d_queue_space);
+    Log(info, "Printing memory queue status");
     execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
+
+    Log(debug, "Heap size after finish: %lu", d_bheap.d_size[0]);
     Log(info, "Host heap size: %lu", h_bheap.size);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
@@ -233,9 +242,11 @@ int main(int argc, char **argv)
         size_t tail_size = d_bheap.d_trigger_size[0] - d_bheap.d_size[0];
         // get block_dim and grid_dim for tail_size
         grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (tail_size - 1) / block_dimension + 1);
-        execKernel(refill_tail, grid_dimension, block_dimension, dev_, false,
-                   queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-                   d_bheap);
+        // execKernel(refill_tail, grid_dimension, block_dimension, dev_, false,
+        //            queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
+        //            d_bheap);
+        refresh_queue(queue_caller(memory_queue, tickets, head, tail),
+                      d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
       }
       else if (exit_code == INFEASIBLE)
       {
