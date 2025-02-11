@@ -106,7 +106,7 @@ __global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uin
 {
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
-        printf("Memory queue:   Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
+        printf("Queue: \t Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
                tail_queue->load(cuda::memory_order_relaxed),
                tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed));
 
