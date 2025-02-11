@@ -114,7 +114,7 @@ __device__ void push(DHEAP<NODE> bheap, NODE new_node)
     size_t size = bheap.d_size[0];
     if (size >= bheap.d_size_limit[0])
     {
-      printf("heap overflow!!\n");
+      DLog(critical, "heap overflow!!\n");
       return;
     }
     heap[size] = new_node;
