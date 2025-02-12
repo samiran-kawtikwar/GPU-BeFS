@@ -80,14 +80,6 @@ void refresh_queue(queue_callee(queue, tickets, head, tail),
   int grid_dim = (memory_queue_len + block_dim - 1) / block_dim;
   execKernel(fill_memory_queue, grid_dim, block_dim, dev_, false,
              queue_caller(queue, tickets, head, tail), node_space, memory_queue_len, start);
-
-  // // Dequeue first start elements
-  // block_dim = 1;
-  // grid_dim = 1;
-  // execKernel(print_queue_status, grid_dim, block_dim, dev_, false,
-  //            queue_caller(queue, tickets, head, tail), memory_queue_len);
-  // execKernel(empty_memory_queue, grid_dim, block_dim, dev_, false,
-  //            queue_caller(queue, tickets, head, tail), memory_queue_len, start);
 }
 
 // Should always be called by single block
@@ -166,8 +158,8 @@ __device__ void get_memory(queue_callee(queue, tickets, head, tail),
     __syncthreads();
     // sleep block here if needed
   }
-  if (threadIdx.x == 0 && !*overflow_flag)
-    DLog(debug, "Block %u got %u tokens: --> %u ,...\n", blockIdx.x, n_tokens, dequeued_idx[0]);
+  // if (threadIdx.x == 0 && !*overflow_flag)
+  //   DLog(debug, "Block %u got %u tokens: --> %u ,...\n", blockIdx.x, n_tokens, dequeued_idx[0]);
 }
 
 // Should always be called by single block

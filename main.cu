@@ -44,6 +44,17 @@ __global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assig
     nodes[i].fixed_assignments = &fixed_assignment_space[i * size];
 }
 
+__global__ void reset_queue_space(queue_info *queue_space, const uint nworkers)
+{
+  size_t g_tid = blockIdx.x * blockDim.x + threadIdx.x;
+  for (size_t i = g_tid; i < nworkers; i += gridDim.x * blockDim.x)
+  {
+    queue_space[i].req_status.store(DONE, cuda::memory_order_release);
+    queue_space[i].batch_size = 0;
+    queue_space[i].id = (uint32_t)i;
+  }
+}
+
 int main(int argc, char **argv)
 {
   Log(info, "Starting program");
@@ -122,18 +133,9 @@ int main(int argc, char **argv)
   // printf("Exiting...\n");
   // exit(0);
 
-  queue_info *d_queue_space, *h_queue_space; // Queue is managed by workers
+  queue_info *d_queue_space; // Queue is managed by workers
   CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
-  h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
-  memset(h_queue_space, 0, nworkers * sizeof(queue_info));
-  for (size_t i = 0; i < nworkers; i++)
-  {
-    h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
-    h_queue_space[i].batch_size = 0;
-    h_queue_space[i].id = (uint32_t)i;
-  }
-  CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
-  free(h_queue_space);
+  execKernel(reset_queue_space, (nworkers + 31) / 32, 32, dev_, false, d_queue_space, nworkers);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
@@ -190,8 +192,7 @@ int main(int argc, char **argv)
   execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_bheap.d_node_space,
              memory_queue_len);
-  execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
-  // Frist kernel to create L1 nodes
+  print_queue(memory_queue, ticjets, head, tail, memory_queue_len);
   execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_bheap, d_problem_info,
@@ -213,68 +214,59 @@ int main(int argc, char **argv)
                d_queue_space, d_worker_space,
                d_hold_status,
                UB, stats);
+    Log(warn, "Nodes Explored: %u, Incumbent: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
     execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
     CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
     Log(critical, "Exit code: %s", ExitCode_text[exit_code]);
-    Log(debug, "Heap size at termination: %lu", d_bheap.d_size[0]);
+    Log(debug, "Device heap size at termination: %lu", d_bheap.d_size[0]);
     Log(info, "Printing request queue status");
-    execKernel(print_queue_status, 1, 1, dev_, false,
-               queue_caller(request_queue, tickets, head, tail), memory_queue_len);
-
-    // Finish all requests in the request queue
-    execKernel(finish_requests, 1, 32, dev_, true,
-               queue_caller(request_queue, tickets, head, tail), nworkers, d_bheap, d_queue_space);
-    Log(info, "Printing memory queue status");
-    execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
-
-    Log(debug, "Heap size after finish: %lu", d_bheap.d_size[0]);
-    Log(info, "Host heap size: %lu", h_bheap.size);
+    print_queue(request_queue, tickets, head, tail, nworkers);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
       if (exit_code == HEAP_FULL)
       {
+        // Finish all requests in the request queue
+        execKernel(finish_requests, 1, 32, dev_, true,
+                   queue_caller(request_queue, tickets, head, tail), nworkers,
+                   d_bheap, d_queue_space);
+        Log(info, "Printing memory queue status");
+        uint current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
+        assert(current_length + d_bheap.d_size[0] == memory_queue_len);
+        Log(debug, "Heap size after finish: %lu", d_bheap.d_size[0]);
+        Log(info, "Host heap size: %lu", h_bheap.size);
         // sort the heap and move to cpu
         d_bheap.standardize(nworkers);
         Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
         d_bheap.move_tail(h_bheap, 0.5);
         // Enqueue the deleted half in memory manager
         Log(info, "Heap size post move: %lu", d_bheap.d_size[0]);
-        size_t tail_size = d_bheap.d_trigger_size[0] - d_bheap.d_size[0];
-        // get block_dim and grid_dim for tail_size
-        grid_dimension = min(size_t(deviceProp.maxGridSize[0]), (tail_size - 1) / block_dimension + 1);
-        // execKernel(refill_tail, grid_dimension, block_dimension, dev_, false,
-        //            queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-        //            d_bheap);
         refresh_queue(queue_caller(memory_queue, tickets, head, tail),
                       d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
       }
       else if (exit_code == INFEASIBLE)
       {
-        Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
+        assert(d_bheap.d_size[0] == 0);
+        Log(info, "Printing memory queue status");
+        uint current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
+        assert(current_length + d_bheap.d_size[0] == memory_queue_len);
+        Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
+        Log(info, "Host heap size pre move: %lu", h_bheap.size);
         uint nelements = min(h_bheap.size, d_bheap.d_size_limit[0] / 2);
         Log(info, "Moving %u elements to device", nelements);
-        uint *d_dev_addresses;
-        CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, nelements * sizeof(uint)));
-        uint *h_dev_addresses = (uint *)malloc(nelements * sizeof(uint));
-        execKernel(get_memory_global, 1, 32, dev_, false,
-                   queue_caller(memory_queue, tickets, head, tail),
-                   memory_queue_len, nelements, d_dev_addresses);
-        CUDA_RUNTIME(cudaMemcpy(h_dev_addresses, d_dev_addresses, nelements * sizeof(uint), cudaMemcpyDeviceToHost));
-        cudaFree(d_dev_addresses);
-        CUDA_RUNTIME(cudaMalloc((void **)&d_dev_addresses, h_bheap.size * sizeof(int)));
-        d_bheap.move_front(h_bheap, h_dev_addresses, nelements);
-        // delete h_dev_addresses
-        free(h_dev_addresses);
+        d_bheap.move_front(h_bheap, nelements);
+        refresh_queue(queue_caller(memory_queue, tickets, head, tail),
+                      d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
+        queue_reset(request_queue, tickets, head, tail, nworkers);
       }
       CUDA_RUNTIME(cudaDeviceSynchronize());
-      execKernel(print_queue_status, 1, 1, dev_, false, queue_caller(memory_queue, tickets, head, tail), memory_queue_len);
-
+      print_queue(memory_queue, tickets, head, tail, memory_queue_len);
       // write a kernel to reset overflow flag
       execKernel(reset_flags, 1, 1, dev_, false);
       counter++;
       Log(debug, "Counter: %d", counter);
       // important reset hold status
       CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
+      execKernel(reset_queue_space, (nworkers + 31) / 32, 32, dev_, false, d_queue_space, nworkers);
       continue;
     }
     if (exit_code == OPTIMAL || exit_code == INFEASIBLE || counter > 10)

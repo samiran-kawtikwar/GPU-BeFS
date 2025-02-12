@@ -9,7 +9,7 @@
 #include "../queue/queue.cuh" // For HHEAP, etc.
 
 // Forward declarations
-__global__ void link_node_fa(node_info *node_space, int *fa_space, const size_t size_limit, const uint psize);
+__global__ void link_node_fa(node_info *node_space, int *fa_space, const size_t size_limit, const uint psize, const size_t start);
 __device__ __forceinline__ void cpy(node_info *source, node_info *dest, const uint psize);
 
 // Extended class: Inherits all the basic heap operations from DHEAP
@@ -144,70 +144,40 @@ public:
     auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     Log(debug, "Moving tail to host");
     d_trigger_size[0] = d_size[0];
-    // format_print("Before moving tail");
-    uint nelements = max((int)(d_size[0] - d_size_limit[0] / 2), (uint)(frac * d_size[0]));
-    uint last = d_size[0] - nelements;
-    d_size[0] = last;
-
     Log(debug, "Trigger size: %lu", d_trigger_size[0]);
-    Log(debug, "Moving... last: %u, nelements", last, nelements);
-    h_heap.resize(h_bheap.size + nelements);
-    // h_node_space.resize(h_bheap.size + nelements);
-    // h_fixed_assignment_space.resize(h_bheap.size + nelements * psize);
-    auto correct_ptr = h_heap.data() + h_bheap.size;
-    CUDA_RUNTIME(cudaMemcpy(correct_ptr, d_heap + last, sizeof(NODE) * nelements, cudaMemcpyDeviceToHost));
-
-    // copy heap node values to host; can do this in parallel with cpu threads
-    for (size_t i = 0; i < nelements; i++)
-    {
-      // create memory for node_info
-      node_info *temp_node = (node_info *)malloc(sizeof(node_info));
-      int *temp_fa = (int *)malloc(psize * sizeof(int));
-      // copy corresponding device pointer to host
-      CUDA_RUNTIME(cudaMemcpy(temp_node, h_heap[h_heap.size() - nelements + i].value, sizeof(node_info), cudaMemcpyDeviceToHost));
-      CUDA_RUNTIME(cudaMemcpy(temp_fa, temp_node->fixed_assignments, psize * sizeof(int), cudaMemcpyDeviceToHost));
-      temp_node->fixed_assignments = temp_fa;
-      temp_node->id = h_bheap.size + i;
-      h_heap[h_bheap.size + i].value = temp_node;
-      h_heap[h_bheap.size + i].location = HOST;
-    }
-    h_bheap.update_size();
+    uint nelements = (d_size[0] - d_size_limit[0] / 2) > (frac * d_size[0]) ? (d_size[0] - d_size_limit[0] / 2) : (frac * d_size[0]);
+    uint last = d_size[0] - nelements;
+    Log(debug, "Attaching... last: %u, nelements", last, nelements);
+    h_bheap.attach(d_heap, d_node_space, d_fixed_assignment_space, last, nelements);
+    d_size[0] = last;
     Log(info, "Host heap size: %lu", h_bheap.size);
-    // format_print("After moving tail");
-    // h_bheap.print("Host heap");
   }
 
   // Move the first half of the host heap to device
-  void move_front(HHEAP<NODE> &h_bheap, const uint *id, const uint nelements)
+  void move_front(HHEAP<NODE> &h_bheap, const uint nelements)
   {
-    Log(info, "Launching move front");
     auto &h_heap = h_bheap.heap;
-    assert(d_size[0] == 0);
-    // print();
-    for (size_t i = 0; i < nelements; i++)
-    {
-      const uint d_id = id[i];
-      // copy fixed assignments to device
-      CUDA_RUNTIME(cudaMemcpy(&d_fixed_assignment_space[d_id * psize], h_heap[i].value->fixed_assignments,
-                              psize * sizeof(int), cudaMemcpyHostToDevice));
-      // remap the fixed assignments location
-      free(h_heap[i].value->fixed_assignments);
-      h_heap[i].value->fixed_assignments = &d_fixed_assignment_space[d_id * psize];
-      // copy node info to device
-      CUDA_RUNTIME(cudaMemcpy(&d_node_space[d_id], h_heap[i].value,
-                              sizeof(node_info), cudaMemcpyHostToDevice));
-      // remap the node info location
-      free(h_heap[i].value);
-      h_heap[i].value = &d_node_space[d_id];
-      cudaMemcpy(d_heap, h_heap.data(), sizeof(NODE) * nelements, cudaMemcpyHostToDevice);
-      // free memory at h_heap[i]
-    }
-    d_size[0] = nelements;
-    h_heap.erase(h_heap.begin(), h_heap.begin() + nelements);
+    auto &h_node_space = h_bheap.node_space;
+    auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
+    size_t start = d_size[0];
+    assert(start == 0);
+    CUDA_RUNTIME(cudaMemcpy(d_heap + start, h_heap.data(), sizeof(NODE) * nelements, cudaMemcpyHostToDevice));
+    CUDA_RUNTIME(cudaMemcpy(d_node_space + start, h_node_space.data(), sizeof(node_info) * nelements, cudaMemcpyHostToDevice));
+    CUDA_RUNTIME(cudaMemcpy(d_fixed_assignment_space + start * psize, h_fixed_assignment_space.data(), nelements * psize * sizeof(int), cudaMemcpyHostToDevice));
+    d_size[0] += nelements;
+    uint block_dim = 1024;
+    uint grid_dim = (size_t(nelements) + block_dim - 1) / block_dim;
+    execKernel(link_value_node, grid_dim, block_dim, dev_, true,
+               d_heap, d_node_space, d_fixed_assignment_space, d_size[0], psize, start);
 
+    h_heap.erase(h_heap.begin(), h_heap.begin() + nelements);
+    h_node_space.erase(h_node_space.begin(), h_node_space.begin() + nelements);
+    h_fixed_assignment_space.erase(h_fixed_assignment_space.begin(), h_fixed_assignment_space.begin() + nelements * psize);
+    h_bheap.update_size();
+    h_bheap.update_pointers();
     Log(debug, "Finished moving front to device");
-    // exit(0);
-    // copy heap node value to device
+    // format_print("Device heap after moving front");
+    // h_bheap.print("Host moving front");
   }
 
   // Utility functions
@@ -280,9 +250,21 @@ __global__ void update_where(DHEAP<NODE> heap, int *where)
   }
 }
 
-__global__ void link_node_fa(node_info *node_space, int *fa_space, const size_t size_limit, const uint psize)
+template <typename NODE>
+__global__ void link_value_node(NODE *heap, node_info *node_space, int *fa_space, const size_t size_limit, const uint psize, const size_t start = 0)
 {
-  size_t g_id = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t g_id = blockIdx.x * blockDim.x + threadIdx.x + start;
+  for (size_t i = g_id; i < size_limit; i += blockDim.x * gridDim.x)
+  {
+    heap[i].value = &node_space[i];
+    node_space[i].id = i;
+    node_space[i].fixed_assignments = &fa_space[i * psize];
+  }
+}
+
+__global__ void link_node_fa(node_info *node_space, int *fa_space, const size_t size_limit, const uint psize, const size_t start = 0)
+{
+  size_t g_id = blockIdx.x * blockDim.x + threadIdx.x + start;
   for (size_t i = g_id; i < size_limit; i += blockDim.x * gridDim.x)
   {
     node_space[i].fixed_assignments = &fa_space[i * psize];

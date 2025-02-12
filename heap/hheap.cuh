@@ -55,6 +55,45 @@ public:
   {
     size = heap.size();
   }
+  void resize(size_t new_size)
+  {
+    heap.resize(new_size);
+    node_space.resize(new_size);
+    fixed_assignment_space.resize(new_size * psize);
+  }
+
+  void append(NODE &node)
+  {
+    heap.push_back(node);
+    node_space.push_back(node.value);
+    for (size_t i = 0; i < psize; i++)
+    {
+      fixed_assignment_space.push_back(node.value->fixed_assignments[i]);
+    }
+  }
+
+  void update_pointers()
+  {
+#pragma omp paralle for
+    for (size_t i = 0; i < size; i++)
+    {
+      heap[i].value = &node_space[i];
+      heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
+      heap[i].value->id = i;
+    }
+  }
+
+  void attach(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
+  {
+    // Add nelements to the heap
+    resize(size + nelements);
+    cudaMemcpy(&heap[size], &d_heap[last], nelements * sizeof(NODE), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&node_space[size], &d_node_space[last], nelements * sizeof(node_info), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&fixed_assignment_space[size * psize], &d_fixed_assignment_space[(size_t)last * psize], nelements * psize * sizeof(int), cudaMemcpyDeviceToHost);
+
+    update_size();
+    update_pointers();
+  }
 
   /* Convert the heap into standard format, defined as:
   1. The heap is sorted in ascending order of keys

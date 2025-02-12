@@ -95,7 +95,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                 request_status = INVALID;
                 if (hold_status[dequeued_idx] == false)
                 {
-                  // DLog(debug, "Holding pop request from block %u\n", dequeued_idx);
+                  // DLog(debug, "Holding pop request from block %u ---- Heap size: %lu\n", dequeued_idx, heap.d_size[0]);
                   queue_space[dequeued_idx].req_status.store(INVALID, cuda::memory_order_release);
                   invalid_count++;
                 }
@@ -145,8 +145,8 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       heap_underflow.store(true, cuda::memory_order_release); // heap empty
       DLog(critical, "Heap underflow detected at invalid_count: %u\n", invalid_count);
       // print hold status of all blocks
-      for (uint i = 0; i < gridDim.x; i++)
-        DLog(debug, "Block %u hold status: %s\n", i, hold_status[i] == true ? "true" : "false");
+      // for (uint i = 0; i < gridDim.x; i++)
+      //   DLog(debug, "Block %u hold status: %s\n", i, hold_status[i] == true ? "true" : "false");
     }
     __syncthreads();
     if (threadIdx.x == 0)
@@ -180,6 +180,99 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     }
     if (underflow_flag)
       DLog(critical, "Heap underflow detected\n");
+  }
+  return;
+}
+
+template <typename NODE>
+__device__ void process_requests_popc(uint INS_LEN,
+                                      queue_callee(queue, tickets, head, tail),
+                                      uint32_t queue_size,
+                                      DHEAP<NODE> heap, queue_info *queue_space)
+{
+  __shared__ bool fork;
+  __shared__ uint qidx, dequeued_idx, count, invalid_count;
+  __shared__ TaskType task_type;
+  if (threadIdx.x == 0)
+  {
+    invalid_count = 0;
+    count = 0;
+  }
+  __syncthreads();
+  while (
+      count < INS_LEN &&
+      //  head_queue->load(cuda::memory_order_relaxed) != tail_queue->load(cuda::memory_order_relaxed) &&
+      // !opt_reached.load(cuda::memory_order_relaxed) &&
+      invalid_count < 10)
+  {
+    // Dequeue here
+    if (threadIdx.x == 0)
+      fork = false;
+    __syncthreads();
+    if (threadIdx.x == 0)
+    {
+      // try dequeue
+      queue_dequeue(queue, tickets, head, tail, queue_size, fork, qidx, N_RECEPIENTS);
+    }
+    __syncthreads();
+    if (fork)
+    {
+      if (threadIdx.x == 0)
+      {
+        for (uint iter = 0; iter < N_RECEPIENTS; iter++)
+        {
+          queue_wait_ticket(queue, tickets, head, tail, queue_size, qidx, dequeued_idx);
+          // TODO: copy memory from queue space[dequeued_idx] to queue_space[own_idx]
+          task_type = queue_space[dequeued_idx].type;
+          queue_space[blockIdx.x].type = task_type;
+          queue_space[blockIdx.x].batch_size = queue_space[dequeued_idx].batch_size;
+          for (uint i = 0; i < queue_space[dequeued_idx].batch_size; i++)
+            queue_space[blockIdx.x].nodes[i] = queue_space[dequeued_idx].nodes[i];
+
+          qidx++;
+        }
+      }
+
+      __syncthreads();
+      __shared__ NODE min;
+      __shared__ bool request_valid;
+      if (blockIdx.x == 0)
+      {
+        if (threadIdx.x == 0)
+          request_valid = true;
+        __syncthreads();
+        switch (task_type)
+        {
+          {
+          case PUSH:
+            push(heap, queue_space[blockIdx.x].nodes[0]);
+            break;
+          case POP:
+            if (threadIdx.x == 0)
+              DLog(warn, "Ignoring pop request\n");
+            __syncthreads();
+            break;
+          case BATCH_PUSH:
+            batch_push(heap, queue_space[blockIdx.x].nodes, queue_space[blockIdx.x].batch_size);
+            break;
+          default:
+            DLog(error, "Reached default\n");
+            break;
+          }
+        }
+      }
+      __syncthreads();
+      if (threadIdx.x == 0 && request_valid)
+      {
+        if (task_type == POP)
+          queue_space[dequeued_idx].nodes[0] = min;
+        queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
+        // printf("Set %u occupied to false\n", dequeued_idx);
+        atomicAdd(&(count), 1);
+        invalid_count = 0;
+      }
+    }
+    __syncthreads();
   }
   return;
 }
@@ -403,7 +496,7 @@ __global__ void finish_requests(queue_callee(queue, tickets, head, tail),
       INS_LEN = (size_t)tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
     }
     __syncthreads();
-    process_requests<NODE>(INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, heap, queue_space);
+    process_requests_popc<NODE>(INS_LEN, queue_caller(queue, tickets, head, tail), queue_size, heap, queue_space);
   }
 }
 
@@ -430,7 +523,7 @@ __device__ bool wait_for_pop(queue_info *queue_space)
       __syncthreads();
       if (threadIdx.x == 0)
       {
-        // DLog(debug, "Block %u's pop request was invalid\n", blockIdx.x);
+        DLog(debug, "Block %u's pop request was invalid\n", blockIdx.x);
         first_invalid = false;
       }
     }

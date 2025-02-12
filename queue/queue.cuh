@@ -102,13 +102,13 @@ __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
         cuda::atomic<uint32_t, cuda::thread_scope_device> *head_##queue,    \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tail_##queue
 
-__global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uint queue_length)
+__global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uint queue_length, uint *current_length)
 {
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
+        *current_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
         printf("Queue: \t Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
-               tail_queue->load(cuda::memory_order_relaxed),
-               tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed));
+               tail_queue->load(cuda::memory_order_relaxed), *current_length);
 
         // // print the queue
         // for (uint i = head_queue->load(cuda::memory_order_relaxed); i < tail_queue->load(cuda::memory_order_relaxed); i++)
@@ -117,7 +117,7 @@ __global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uin
         // }
         // printf("\n");
 
-        // // print queue tickets
+        // // print full queue tickets
         // for (uint i = 0; i < queue_length; i++)
         // {
         //     if (i % 10 == 0)
@@ -127,3 +127,12 @@ __global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uin
         // printf("\n");
     }
 }
+
+#define print_queue(queue, tickets, head, tail, queue_size) ({                                            \
+    uint *d_current_length, h_current_length;                                                             \
+    CUDA_RUNTIME(cudaMalloc((void **)&d_current_length, sizeof(uint)));                                   \
+    print_queue_status<<<1, 1>>>(queue_caller(queue, tickets, head, tail), queue_size, d_current_length); \
+    CUDA_RUNTIME(cudaMemcpy(&h_current_length, d_current_length, sizeof(uint), cudaMemcpyDeviceToHost));  \
+    CUDA_RUNTIME(cudaFree(d_current_length));                                                             \
+    h_current_length;                                                                                     \
+})

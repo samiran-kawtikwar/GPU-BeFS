@@ -209,6 +209,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         nchild_feas = 0;
         popped_index = popped_node.value->id;
         lvl = popped_node.value->level;
+        // DLog(debug, "Block %u popped node id: %u, lvl: %u\n", blockIdx.x, popped_index, lvl);
       }
       if (local_id == 0)
         UB[tile_id] = float(global_UB); // Reset UB
@@ -372,6 +373,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         // free the popped node from node space
         free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                     popped_index);
+        // if (threadIdx.x == 0)
+        //   DLog(warn, "Block %u freed node id: %u\n", blockIdx.x, popped_index);
       }
       else
       {
