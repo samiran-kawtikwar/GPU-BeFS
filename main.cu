@@ -57,6 +57,7 @@ __global__ void reset_queue_space(queue_info *queue_space, const uint nworkers)
 
 int main(int argc, char **argv)
 {
+  setvbuf(stdout, nullptr, _IONBF, 0);
   Log(info, "Starting program");
   Config config = parseArgs(argc, argv);
   printConfig(config);
@@ -109,9 +110,9 @@ int main(int argc, char **argv)
   // Find max concurrent blocks for the branch_n_bound kernel
   cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
   // Log(debug, "Max concurrent blocks per SM: %d", nworkers);
-  // nworkers *= deviceProp.multiProcessorCount;
+  nworkers *= deviceProp.multiProcessorCount;
   nsubworkers = BlockSize / TileSize;
-  nworkers = 30;
+  nworkers = 3000;
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   // Log(debug, "Max potential block size: %d", nb1);
@@ -128,11 +129,6 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nsubworkers * nworkers * sizeof(subgrad_space)));
   d_subgrad_space->allocate(psize, ncommodities, nsubworkers * nworkers, dev_);
 
-  // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
-  // printf("Exiting...\n");
-  // exit(0);
-
   queue_info *d_queue_space; // Queue is managed by workers
   CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
   execKernel(reset_queue_space, (nworkers + 31) / 32, 32, dev_, false, d_queue_space, nworkers);
@@ -146,8 +142,8 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&available, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
   // size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  // size_t memory_queue_len = (available * 0.0000002) / memory_queue_weight; // Keeping 5% headroom
-  size_t memory_queue_len = 150;
+  // size_t memory_queue_len = (available * 0.01) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = 1500;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP
@@ -225,6 +221,8 @@ int main(int argc, char **argv)
     {
       if (exit_code == HEAP_FULL)
       {
+        Log(debug, "Printing memory queue status");
+        print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         // Finish all requests in the request queue
         execKernel(finish_requests, 1, 32, dev_, true,
                    queue_caller(request_queue, tickets, head, tail), nworkers,

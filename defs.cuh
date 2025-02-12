@@ -13,7 +13,7 @@ typedef uint cost_type;
 typedef uint weight_type;
 
 #define BlockSize 64U
-#define TileSize 64U
+#define TileSize 32U
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
 

@@ -120,7 +120,7 @@ public:
 
     CUDA_RUNTIME(cudaMemset(temp_node_space, 0, 2 * grid_dim * sizeof(node_info)));
     CUDA_RUNTIME(cudaMemset(temp_fa_space, 0, 2 * grid_dim * psize * sizeof(int)));
-    execKernel(link_node_fa, grid_dim_link, block_dim, dev_, true,
+    execKernel(link_node_fa, grid_dim_link, block_dim, dev_, false,
                temp_node_space, temp_fa_space, 2 * grid_dim, psize);
 
     // printDeviceMatrix(d_fixed_assignment_space, size_limit, psize, "Fixed assignments:");
