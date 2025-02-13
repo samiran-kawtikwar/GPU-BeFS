@@ -10,6 +10,7 @@
 __device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_underflow; // For infeasibility check
+__device__ cuda::atomic<bool, cuda::thread_scope_device> master_exited;
 
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
@@ -34,6 +35,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     if (heap_underflow.load(cuda::memory_order_relaxed))
       underflow_flag = true;
     queue_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
+    master_exited.store(false, cuda::memory_order_release);
   }
   __syncthreads();
   while (!opt_flag && !underflow_flag)
@@ -72,10 +74,11 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       if (blockIdx.x == 0)
       {
         __syncthreads();
-        // if (threadIdx.x == 0)
-        //   printf("Block %u is processing %s request for block %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx);
         if (threadIdx.x == 0)
+        {
+          // DLog(info, "Master is processing %s request for block %u\n", getTextForEnum(task_type), dequeued_idx);
           request_status = DONE;
+        }
         __syncthreads();
         switch (task_type)
         {
@@ -84,7 +87,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             push(heap, queue_space[blockIdx.x].nodes[0]);
             break;
           case POP:
-            if (heap.d_size[0] > 0 && !overflow_flag)
+            if (heap.d_size[0] > 0)
             {
               pop(heap, min);
             }
@@ -100,9 +103,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                   invalid_count++;
                 }
                 hold_status[dequeued_idx] = true;
-                // send the pop request back to the queue if overflow hasn't occurred
-                if (!overflow_flag)
-                  queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
+                // send the pop request back to the queue for later processing
+                // printf("Master requed pop for block %u\n", dequeued_idx);
+                queue_enqueue(queue, tickets, head, tail, queue_size, dequeued_idx);
               }
               __syncthreads();
             }
@@ -126,6 +129,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
           if (task_type == POP)
             queue_space[dequeued_idx].nodes[0] = min;
           queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
+          DLog(warn, "Master changed flag of block %u to DONE\n", dequeued_idx);
           atomicAdd(&(count), 1);
           if (count % 100000 == 0)
             DLog(debug, "Processed %u requests\n", count);
@@ -134,7 +138,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             invalid_count--;
             hold_status[dequeued_idx] = false;
           }
-          // DLog(debug, "Block %u processed %s request for block %u, queue-size: %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx, size);
+          // DLog(info, "Master processed %s request for block %u, queue-size: %u\n", getTextForEnum(task_type), dequeued_idx, size);
         }
         // __syncthreads();
       }
@@ -151,12 +155,15 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     __syncthreads();
     if (threadIdx.x == 0)
     {
-      if (opt_reached.load(cuda::memory_order_relaxed))
-        opt_flag = true;
-      if (heap_overflow.load(cuda::memory_order_relaxed))
-        overflow_flag = true;
-      if (heap_underflow.load(cuda::memory_order_relaxed))
-        underflow_flag = true;
+      // if (opt_reached.load(cuda::memory_order_relaxed))
+      //   opt_flag = true;
+      // if (heap_overflow.load(cuda::memory_order_relaxed))
+      //   overflow_flag = true;
+      // if (heap_underflow.load(cuda::memory_order_relaxed))
+      //   underflow_flag = true;
+      opt_flag = opt_reached.load(cuda::memory_order_relaxed);
+      overflow_flag = heap_overflow.load(cuda::memory_order_relaxed);
+      underflow_flag = heap_underflow.load(cuda::memory_order_relaxed);
       queue_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
       if (overflow_flag)
         DLog(debug, "Current queue length: %u\n", queue_length);
@@ -164,6 +171,9 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
     __syncthreads();
     if (queue_length == 0 && overflow_flag)
     {
+      if (threadIdx.x == 0)
+        master_exited.store(true, cuda::memory_order_release);
+      __syncthreads();
       break;
     }
   }
@@ -191,19 +201,14 @@ __device__ void process_requests_popc(uint INS_LEN,
                                       DHEAP<NODE> heap, queue_info *queue_space)
 {
   __shared__ bool fork;
-  __shared__ uint qidx, dequeued_idx, count, invalid_count;
+  __shared__ uint qidx, dequeued_idx, count;
   __shared__ TaskType task_type;
   if (threadIdx.x == 0)
   {
-    invalid_count = 0;
     count = 0;
   }
   __syncthreads();
-  while (
-      count < INS_LEN &&
-      //  head_queue->load(cuda::memory_order_relaxed) != tail_queue->load(cuda::memory_order_relaxed) &&
-      // !opt_reached.load(cuda::memory_order_relaxed) &&
-      invalid_count < 10)
+  while (count < INS_LEN)
   {
     // Dequeue here
     if (threadIdx.x == 0)
@@ -235,12 +240,8 @@ __device__ void process_requests_popc(uint INS_LEN,
 
       __syncthreads();
       __shared__ NODE min;
-      __shared__ bool request_valid;
       if (blockIdx.x == 0)
       {
-        if (threadIdx.x == 0)
-          request_valid = true;
-        __syncthreads();
         switch (task_type)
         {
           {
@@ -262,14 +263,13 @@ __device__ void process_requests_popc(uint INS_LEN,
         }
       }
       __syncthreads();
-      if (threadIdx.x == 0 && request_valid)
+      if (threadIdx.x == 0)
       {
         if (task_type == POP)
           queue_space[dequeued_idx].nodes[0] = min;
         queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
         // printf("Set %u occupied to false\n", dequeued_idx);
         atomicAdd(&(count), 1);
-        invalid_count = 0;
       }
     }
     __syncthreads();
@@ -420,8 +420,9 @@ __device__ void generate_request_block(const d_instruction ins,
     // optimality reached while a block is waiting for a request
     if (threadIdx.x == 0)
     {
-      if (opt_reached.load(cuda::memory_order_relaxed) || heap_overflow.load(cuda::memory_order_relaxed))
+      if (opt_reached.load(cuda::memory_order_relaxed) || master_exited.load(cuda::memory_order_relaxed))
       {
+        queue_space[blockIdx.x].req_status.store(INVALID, cuda::memory_order_release);
         DLog(debug, "Termination reached while waiting to send %s for block %u\n", getTextForEnum(ins.type), blockIdx.x);
         termination_flag = true;
       }
@@ -528,6 +529,20 @@ __device__ bool wait_for_pop(queue_info *queue_space)
       }
     }
     __syncthreads();
+
+    // optimality reached while a block is waiting for a pop
+    if (threadIdx.x == 0)
+    {
+      if (opt_reached.load(cuda::memory_order_relaxed) ||
+          master_exited.load(cuda::memory_order_relaxed) || // Instead of overflow, monitor this
+          heap_underflow.load(cuda::memory_order_relaxed))
+      {
+        pop_status = queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed); // Update status just in case
+        if (pop_status != DONE)
+          terminate_signal = true;
+      }
+    }
+    __syncthreads();
     if (pop_status == DONE)
     {
       if (!first_invalid)
@@ -537,16 +552,6 @@ __device__ bool wait_for_pop(queue_info *queue_space)
       __syncthreads();
       return true;
     }
-
-    // optimality reached while a block is waiting for a pop
-    if (threadIdx.x == 0)
-    {
-      if (opt_reached.load(cuda::memory_order_relaxed) ||
-          heap_overflow.load(cuda::memory_order_relaxed) ||
-          heap_underflow.load(cuda::memory_order_relaxed))
-        terminate_signal = true;
-    }
-    __syncthreads();
     if (terminate_signal)
       return false;
 

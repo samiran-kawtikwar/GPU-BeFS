@@ -35,6 +35,7 @@ __global__ void reset_flags()
 {
   heap_overflow.store(false, cuda::memory_order_release);
   heap_underflow.store(false, cuda::memory_order_release);
+  master_exited.store(false, cuda::memory_order_release);
 }
 
 __global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assignment_space, const uint size, const uint len)
@@ -112,7 +113,7 @@ int main(int argc, char **argv)
   // Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   nworkers *= deviceProp.multiProcessorCount;
   nsubworkers = BlockSize / TileSize;
-  nworkers = 3000;
+  // nworkers = 30;
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   // Log(debug, "Max potential block size: %d", nb1);
@@ -143,7 +144,7 @@ int main(int argc, char **argv)
   Log(info, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
   // size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
   // size_t memory_queue_len = (available * 0.01) / memory_queue_weight; // Keeping 5% headroom
-  size_t memory_queue_len = 1500;
+  size_t memory_queue_len = 15000;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP
@@ -196,6 +197,8 @@ int main(int argc, char **argv)
              d_queue_space, d_worker_space,
              d_hold_status, UB);
 
+  Log(info, "Device heap size after initial branching: %lu", d_bheap.d_size[0]);
+  print_queue(memory_queue, tickets, head, tail, memory_queue_len);
   cuProfilerStart();
   // Get exit code
   ExitCode exit_code, *d_exit_code;
@@ -216,7 +219,7 @@ int main(int argc, char **argv)
     Log(critical, "Exit code: %s", ExitCode_text[exit_code]);
     Log(debug, "Device heap size at termination: %lu", d_bheap.d_size[0]);
     Log(info, "Printing request queue status");
-    print_queue(request_queue, tickets, head, tail, nworkers);
+    uint current_length = print_queue(request_queue, tickets, head, tail, nworkers);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
       if (exit_code == HEAP_FULL)
@@ -224,22 +227,24 @@ int main(int argc, char **argv)
         Log(debug, "Printing memory queue status");
         print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         // Finish all requests in the request queue
-        execKernel(finish_requests, 1, 32, dev_, true,
-                   queue_caller(request_queue, tickets, head, tail), nworkers,
-                   d_bheap, d_queue_space);
+        if (current_length > 0)
+        {
+          execKernel(finish_requests, 1, 32, dev_, true,
+                     queue_caller(request_queue, tickets, head, tail), nworkers,
+                     d_bheap, d_queue_space);
+        }
+        Log(debug, "Device heap size after finish: %lu", d_bheap.d_size[0]);
         Log(info, "Printing memory queue status");
-        uint current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
+        current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         assert(current_length + d_bheap.d_size[0] == memory_queue_len);
         Log(debug, "Heap size after finish: %lu", d_bheap.d_size[0]);
         Log(info, "Host heap size: %lu", h_bheap.size);
         // sort the heap and move to cpu
         d_bheap.standardize(nworkers);
-        Log(info, "Heap size pre move: %lu", d_bheap.d_size[0]);
+        Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
         d_bheap.move_tail(h_bheap, 0.5);
         // Enqueue the deleted half in memory manager
-        Log(info, "Heap size post move: %lu", d_bheap.d_size[0]);
-        refresh_queue(queue_caller(memory_queue, tickets, head, tail),
-                      d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
+        Log(info, "Device heap size post move: %lu", d_bheap.d_size[0]);
       }
       else if (exit_code == INFEASIBLE)
       {
@@ -252,25 +257,23 @@ int main(int argc, char **argv)
         uint nelements = min(h_bheap.size, d_bheap.d_size_limit[0] / 2);
         Log(info, "Moving %u elements to device", nelements);
         d_bheap.move_front(h_bheap, nelements);
-        refresh_queue(queue_caller(memory_queue, tickets, head, tail),
-                      d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
-        queue_reset(request_queue, tickets, head, tail, nworkers);
+        Log(info, "Device heap size post move: %lu", d_bheap.d_size[0]);
       }
+      refresh_queue(queue_caller(memory_queue, tickets, head, tail),
+                    d_bheap.d_node_space, memory_queue_len, d_bheap, dev_);
       CUDA_RUNTIME(cudaDeviceSynchronize());
       print_queue(memory_queue, tickets, head, tail, memory_queue_len);
       // write a kernel to reset overflow flag
       execKernel(reset_flags, 1, 1, dev_, false);
       counter++;
       Log(debug, "Counter: %d", counter);
-      // important reset hold status
+      // important reset request queue and queue space
+      queue_reset(request_queue, tickets, head, tail, nworkers);
       CUDA_RUNTIME(cudaMemset((void *)d_hold_status, 0, nworkers * sizeof(bool)));
       execKernel(reset_queue_space, (nworkers + 31) / 32, 32, dev_, false, d_queue_space, nworkers);
-      continue;
     }
-    if (exit_code == OPTIMAL || exit_code == INFEASIBLE || counter > 10)
-    {
+    if (exit_code == OPTIMAL || (exit_code == INFEASIBLE && h_bheap.size == 0))
       break;
-    }
   }
 
 #ifdef TIMER

@@ -1,4 +1,4 @@
-#include <execution>
+#include <tbb/parallel_sort.h>
 #include "../utils/logger.cuh"
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
@@ -85,7 +85,7 @@ public:
 
   void attach(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
   {
-    // Add nelements to the heap
+    // Append nelements to the heap
     resize(size + nelements);
     cudaMemcpy(&heap[size], &d_heap[last], nelements * sizeof(NODE), cudaMemcpyDeviceToHost);
     cudaMemcpy(&node_space[size], &d_node_space[last], nelements * sizeof(node_info), cudaMemcpyDeviceToHost);
@@ -93,6 +93,10 @@ public:
 
     update_size();
     update_pointers();
+
+    // Sort the heap in ascending order
+    sort();
+    standardize(); // Convert host heap to standard format
   }
 
   /* Convert the heap into standard format, defined as:
@@ -217,7 +221,7 @@ public:
   // Sort in ascending order
   void sort()
   {
-    std::sort(std::execution::par, heap.begin(), heap.end());
+    tbb::parallel_sort(heap.begin(), heap.end());
   }
 
 private:

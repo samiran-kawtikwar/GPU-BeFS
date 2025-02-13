@@ -17,7 +17,7 @@ CPP_OBJ_FILES := $(patsubst %.cpp,$(BUILD_DIR)/obj/%.cpp.o,$(CPP_FILES))
 CPPFLAGS ?= -g -O3 -fopenmp -Wno-format-security -Wno-format-zero-length -std=c++17
 CPPINC ?= -I${GUROBI_HOME}/include
 LDIR_CPP ?= -L${GUROBI_HOME}/lib
-LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110 -lm -lstdc++
+LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110 -lm -lstdc++ -ltbb
 
 # cuda flags
 CUDAFLAGS ?= -lineinfo -O3 -std=c++17 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH)\

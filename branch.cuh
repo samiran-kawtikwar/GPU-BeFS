@@ -187,6 +187,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
     while (!opt_flag && !overflow_flag)
     {
       START_TIME(QUEUING);
+      if (threadIdx.x == 0)
+        DLog(info, "Block %u requested POP\n", blockIdx.x);
       // pop a node from the bheap
       send_requests(POP, 0, NULL,
                     queue_caller(request_queue, tickets, head, tail),
@@ -209,7 +211,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         nchild_feas = 0;
         popped_index = popped_node.value->id;
         lvl = popped_node.value->level;
-        // DLog(debug, "Block %u popped node id: %u, lvl: %u\n", blockIdx.x, popped_index, lvl);
+        DLog(warn, "Block %u popped node id: %u, lvl: %u\n", blockIdx.x, popped_index, lvl);
       }
       if (local_id == 0)
         UB[tile_id] = float(global_UB); // Reset UB
@@ -269,17 +271,19 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           current_node[tile_id].value = &current_node_info[tile_id];
         }
         sync(tile);
-        feas_check(pinfo, tile,
-                   &current_node[tile_id], col_fa[tile_id],
-                   lap_costs[tile_id], stats, my_space->feasible[i],
-                   ph[tile_id]);
+        // feas_check(pinfo, tile,
+        //            &current_node[tile_id], col_fa[tile_id],
+        //            lap_costs[tile_id], stats, my_space->feasible[i],
+        //            ph[tile_id]);
+        feas_check_naive(pinfo, &current_node[tile_id], col_fa[tile_id], lap_costs[tile_id], stats, my_space->feasible[i]);
 
         sync(tile);
         // update bounds if the child is feasible
         if (my_space->feasible[i])
         {
-          update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
-                                &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
+          update_bounds(pinfo, &current_node[tile_id]);
+          // update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
+          //                       &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
           sync(tile);
 
           if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
@@ -364,7 +368,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                         queue_caller(request_queue, tickets, head, tail),
                         request_queue_size, queue_space);
           if (threadIdx.x == 0)
-            DLog(debug, "Block %u pushed %u children\n", blockIdx.x, nchild_feas);
+            DLog(critical, "Block %u pushed %u children\n", blockIdx.x, nchild_feas);
         }
       }
       __syncthreads();
@@ -373,8 +377,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         // free the popped node from node space
         free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
                     popped_index);
-        // if (threadIdx.x == 0)
-        //   DLog(warn, "Block %u freed node id: %u\n", blockIdx.x, popped_index);
+        if (threadIdx.x == 0)
+          DLog(info, "Block %u freed node id: %u\n", blockIdx.x, popped_index);
       }
       else
       {
@@ -384,7 +388,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                       request_queue_size, queue_space);
         if (threadIdx.x == 0)
         {
-          DLog(debug, "Block %u ran out, pushing back node id: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->id);
+          DLog(info, "Block %u ran out, pushing back node id: %u\n", blockIdx.x, queue_space[blockIdx.x].nodes[0].value->id);
           heap_overflow.store(true, cuda::memory_order_release);
         }
       }
@@ -410,6 +414,6 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
   __syncthreads();
   if (threadIdx.x == 0)
   {
-    DLog(debug, "Block %u is done\n", blockIdx.x);
+    DLog(warn, "Block %u is done\n", blockIdx.x);
   }
 }
