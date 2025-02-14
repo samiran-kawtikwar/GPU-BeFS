@@ -10,6 +10,7 @@
 
 // Forward declarations
 __global__ void link_node_fa(node_info *node_space, int *fa_space, const size_t size_limit, const uint psize, const size_t start);
+__global__ void check_duplicates(int *where, int *bitmap, int *d_result, const size_t size_limit);
 __device__ __forceinline__ void cpy(node_info *source, node_info *dest, const uint psize);
 
 // Extended class: Inherits all the basic heap operations from DHEAP
@@ -110,6 +111,7 @@ public:
     execKernel(update_where, grid_dim_where, block_dim, dev_, false, *this, where);
     // printDeviceArray(where, size_limit, "where");
     // printDeviceArray(visited, size_limit, "visited");
+    // assert(sanity_check(where, size_limit));
 
     // Create temp memory for node_info and fixed_assignments for each worker: to be used during swap
     node_info *temp_node_space;
@@ -220,6 +222,24 @@ public:
                 << ", ID: " << h_node_space[i].id << "\n";
     }
   }
+
+  bool sanity_check(int *where, const size_t size_limit)
+  {
+    int block_dim = 32;
+    int grid_dim = (size_limit + block_dim - 1) / block_dim;
+    int *d_bitmap;
+    int *d_result, h_result;
+    CUDA_RUNTIME(cudaMalloc((void **)&d_bitmap, size_limit * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&d_result, sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(d_bitmap, 0, size_limit * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(d_result, 0, sizeof(int)));
+    execKernel(check_duplicates, grid_dim, block_dim, dev_, false, where, d_bitmap, d_result, size_limit);
+    CUDA_RUNTIME(cudaDeviceSynchronize());
+    CUDA_RUNTIME(cudaMemcpy(&h_result, d_result, sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_RUNTIME(cudaFree(d_bitmap));
+    CUDA_RUNTIME(cudaFree(d_result));
+    return h_result == 0;
+  }
 };
 
 // Standardize kernels
@@ -238,7 +258,7 @@ __global__ void set_where(DHEAP<NODE> heap, int *where, int *visited)
 }
 
 template <typename NODE>
-__global__ void update_where(DHEAP<NODE> heap, int *where)
+__global__ void update_where(const DHEAP<NODE> heap, int *where)
 {
   size_t size = heap.d_size[0];
   NODE *d_heap = heap.d_heap;
@@ -457,4 +477,28 @@ __device__ __forceinline__ void cpy(node_info *source, node_info *dest, const ui
     dest->fixed_assignments[j] = source->fixed_assignments[j];
   }
   __syncthreads();
+}
+
+__global__ void check_duplicates(int *where, int *bitmap, int *d_result, const size_t size_limit)
+{
+  size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+  while (i < size_limit)
+  {
+    int val = where[i];
+    if (val >= int(size_limit))
+    {
+      printf("Thread %lu incountered high value: %d\n", i, val);
+      atomicAdd(d_result, 1);
+    }
+    if (val > -1 && val < size_limit)
+    {
+      bool old = bool(atomicOr(&bitmap[val], int(true)));
+      if (old)
+      {
+        printf("Thread %lu incountered duplicate value: %d\n", i, val);
+        atomicAdd(d_result, 1);
+      }
+    }
+    i += blockDim.x * gridDim.x;
+  }
 }
