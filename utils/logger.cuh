@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include "../utils/cuda_utils.cuh"
-#define __DEBUG__
+// #define __DEBUG__
 // #define LOG_D
 // #define DEBUG_D
 

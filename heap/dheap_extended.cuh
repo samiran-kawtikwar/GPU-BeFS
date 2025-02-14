@@ -77,7 +77,7 @@ public:
   // sort d_heap in ascending order with thrust
   void sort()
   {
-    Log(info, "Sorting the heap");
+    Log(debug, "Sorting the heap");
     if (d_size[0] != 0)
     {
       thrust::device_ptr<NODE> dev_ptr(d_heap);
@@ -169,7 +169,7 @@ public:
     d_size[0] += nelements;
     uint block_dim = 1024;
     uint grid_dim = (size_t(nelements) + block_dim - 1) / block_dim;
-    execKernel(link_value_node, grid_dim, block_dim, dev_, true,
+    execKernel(link_value_node, grid_dim, block_dim, dev_, false,
                d_heap, d_node_space, d_fixed_assignment_space, d_size[0], psize, start);
 
     h_heap.erase(h_heap.begin(), h_heap.begin() + nelements);
