@@ -96,7 +96,7 @@ public:
 
     // Sort the heap in ascending order
     sort();
-    standardize(); // Convert host heap to standard format
+    standardize_p(); // Convert host heap to standard format
   }
 
   /* Convert the heap into standard format, defined as:
@@ -164,6 +164,58 @@ public:
     where.clear();
     temp1.clear();
     temp2.clear();
+  }
+
+  void standardize_p()
+  {
+    std::vector<int> where(node_space.size(), -1);
+// where[i] = j -> information at i should be stored at j
+#pragma omp parallel for
+    for (size_t i = 0; i < heap.size(); i++)
+      where[heap[i].value->id] = i;
+
+    {
+      std::vector<node_info> cache_space(node_space.size());
+#pragma omp parallel for schedule(static, 1024)
+      for (size_t i = 0; i < heap.size(); i++)
+      {
+        int my_id = heap[i].value->id;
+        cache_space[i] = node_space[my_id];
+      }
+#pragma omp parallel for schedule(static, 1024)
+      for (size_t i = 0; i < heap.size(); i++)
+      {
+        node_space[i] = cache_space[i];
+      }
+      cache_space.clear();
+    }
+    {
+      std::vector<int> cache_space(node_space.size(), -1);
+      for (size_t j = 0; j < psize; j++)
+      {
+#pragma omp parallel for schedule(static, 1024)
+        for (size_t i = 0; i < heap.size(); i++)
+        {
+          int my_id = heap[i].value->id;
+          cache_space[i] = fixed_assignment_space[my_id * psize + j];
+        }
+#pragma omp parallel for schedule(static, 1024)
+        for (size_t i = 0; i < heap.size(); i++)
+        {
+          fixed_assignment_space[i * psize + j] = cache_space[i];
+        }
+      }
+      cache_space.clear();
+    }
+    where.clear();
+
+#pragma omp parallel for schedule(static, 1024)
+    for (size_t i = 0; i < heap.size(); i++)
+    {
+      heap[i].value = &node_space[i];
+      heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
+      heap[i].value->id = i;
+    }
   }
 
   void to_device(DHEAP<NODE> &d_heap)
