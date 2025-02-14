@@ -512,9 +512,9 @@ __device__ bool wait_for_pop(queue_info *queue_space)
     terminate_signal = false;
     first_invalid = true;
   }
-  __syncthreads();
   while (true)
   {
+    __syncthreads();
     if (threadIdx.x == 0)
       pop_status = queue_space[blockIdx.x].req_status.load(cuda::memory_order_relaxed);
     __syncthreads();
