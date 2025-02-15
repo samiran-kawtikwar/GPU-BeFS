@@ -169,63 +169,50 @@ public:
   void rearrange_p()
   {
     std::vector<int> where(node_space.size(), -1);
+    std::vector<node_info> cache_node(node_space.size());
+    std::vector<int> cache_int(node_space.size());
 // where[i] = j -> information at i should be stored at j
-#pragma omp parallel for
-    for (size_t i = 0; i < heap.size(); i++)
-    {
-      where[heap[i].value->id] = i;
-    }
-
 #pragma omp parallel
     {
-      int num_threads = omp_get_num_threads();
-      int thread_id = omp_get_thread_num();
-      if (thread_id == 0)
-        log(info, "Running rearrange with %d threads", num_threads);
-    }
+      // Fill where array
+#pragma omp for schedule(static)
+      for (size_t i = 0; i < heap.size(); i++)
+        where[heap[i].value->id] = i;
 
-    {
-      std::vector<node_info> cache_space(node_space.size());
-#pragma omp parallel for schedule(static, 1024)
+#pragma omp for schedule(static)
       for (size_t i = 0; i < heap.size(); i++)
       {
         int my_id = heap[i].value->id;
-        cache_space[i] = node_space[my_id];
+        cache_node[i] = node_space[my_id];
       }
-#pragma omp parallel for schedule(static, 1024)
+#pragma omp for schedule(static)
       for (size_t i = 0; i < heap.size(); i++)
-      {
-        node_space[i] = cache_space[i];
-      }
-      cache_space.clear();
-    }
-    {
-      std::vector<int> cache_space(node_space.size(), -1);
+        node_space[i] = cache_node[i];
       for (size_t j = 0; j < psize; j++)
       {
-#pragma omp parallel for schedule(static, 1024)
+#pragma omp for schedule(static)
         for (size_t i = 0; i < heap.size(); i++)
         {
           int my_id = heap[i].value->id;
-          cache_space[i] = fixed_assignment_space[my_id * psize + j];
+          cache_int[i] = fixed_assignment_space[my_id * psize + j];
         }
-#pragma omp parallel for schedule(static, 1024)
+#pragma omp for schedule(static)
         for (size_t i = 0; i < heap.size(); i++)
         {
-          fixed_assignment_space[i * psize + j] = cache_space[i];
+          fixed_assignment_space[i * psize + j] = cache_int[i];
         }
       }
-      cache_space.clear();
+#pragma omp for schedule(static)
+      for (size_t i = 0; i < heap.size(); i++)
+      {
+        heap[i].value = &node_space[i];
+        heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
+        heap[i].value->id = i;
+      }
     }
     where.clear();
-
-#pragma omp parallel for schedule(static, 1024)
-    for (size_t i = 0; i < heap.size(); i++)
-    {
-      heap[i].value = &node_space[i];
-      heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
-      heap[i].value->id = i;
-    }
+    cache_node.clear();
+    cache_int.clear();
   }
 
   void to_device(DHEAP<NODE> &d_heap)

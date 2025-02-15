@@ -225,7 +225,7 @@ int main(int argc, char **argv)
       if (h_bheap.standardize_thread.joinable())
       {
         h_bheap.standardize_thread.join();
-        DLog(debug, "Synchronized host standardize thread");
+        Log(debug, "Synchronized host standardize thread");
       }
       if (exit_code == HEAP_FULL)
       {
