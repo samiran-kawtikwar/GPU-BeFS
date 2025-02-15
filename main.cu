@@ -143,8 +143,8 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&available, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (available * 0.95) / memory_queue_weight; // Keeping 5% headroom
-  // size_t memory_queue_len = 15000;
+  size_t memory_queue_len = (available * 0.1) / memory_queue_weight; // Keeping 5% headroom
+  // size_t memory_queue_len = 1500;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP
@@ -189,7 +189,7 @@ int main(int argc, char **argv)
   execKernel(fill_memory_queue, grid_dimension, block_dimension, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), d_bheap.d_node_space,
              memory_queue_len);
-  print_queue(memory_queue, ticjets, head, tail, memory_queue_len);
+  print_queue(memory_queue, tickets, head, tail, memory_queue_len);
   execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_bheap, d_problem_info,
@@ -222,13 +222,18 @@ int main(int argc, char **argv)
     uint current_length = print_queue(request_queue, tickets, head, tail, nworkers);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
+      if (h_bheap.standardize_thread.joinable())
+      {
+        h_bheap.standardize_thread.join();
+        DLog(debug, "Synchronized host standardize thread");
+      }
       if (exit_code == HEAP_FULL)
       {
-        Log(debug, "Printing memory queue status");
-        print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         // Finish all requests in the request queue
         if (current_length > 0)
         {
+          Log(debug, "Printing memory queue status");
+          print_queue(memory_queue, tickets, head, tail, memory_queue_len);
           execKernel(finish_requests, 1, 32, dev_, true,
                      queue_caller(request_queue, tickets, head, tail), nworkers,
                      d_bheap, d_queue_space);
@@ -289,6 +294,7 @@ int main(int argc, char **argv)
   Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
   Log(info, "Nodes Explored: %u, Incumbent: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
   Log(info, "Total time taken: %f sec", t.elapsed());
+  Log(info, "Total launches: %d", counter);
 
   // Free device memory
   d_bheap.free_memory();

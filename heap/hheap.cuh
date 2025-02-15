@@ -2,6 +2,7 @@
 #include "../utils/logger.cuh"
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
+#include <thread>
 
 template <typename NODE>
 class DHEAP; // Forward declaration
@@ -24,6 +25,7 @@ public:
   size_t size;      // live size of the host heap
   size_t footprint; // Live memory footprint of the heap with all its node associated data
 
+  std::thread standardize_thread;
   // Constructors
   __host__ HHEAP(uint problem_size)
   {
@@ -94,9 +96,7 @@ public:
     update_size();
     update_pointers();
 
-    // Sort the heap in ascending order
-    sort();
-    standardize_p(); // Convert host heap to standard format
+    standardize_async();
   }
 
   /* Convert the heap into standard format, defined as:
@@ -105,7 +105,7 @@ public:
       i.e. d_heap[i].value at location d_node_space[i] for all i < d_size
   This format would allow efficient batch operations on the heap when the heap is moved to host and vice versa
   */
-  void standardize()
+  void rearrange()
   {
     // sort();
     Log(debug, "Started standardizing heap");
@@ -166,13 +166,23 @@ public:
     temp2.clear();
   }
 
-  void standardize_p()
+  void rearrange_p()
   {
     std::vector<int> where(node_space.size(), -1);
 // where[i] = j -> information at i should be stored at j
 #pragma omp parallel for
     for (size_t i = 0; i < heap.size(); i++)
+    {
       where[heap[i].value->id] = i;
+    }
+
+#pragma omp parallel
+    {
+      int num_threads = omp_get_num_threads();
+      int thread_id = omp_get_thread_num();
+      if (thread_id == 0)
+        log(info, "Running rearrange with %d threads", num_threads);
+    }
 
     {
       std::vector<node_info> cache_space(node_space.size());
@@ -241,6 +251,22 @@ public:
     cudaMemcpy(d_heap.d_heap, heap.data(), heap_size * sizeof(node), cudaMemcpyHostToDevice);
     d_heap.d_size[0] = heap_size;
     d_heap.d_max_size[0] = max(d_heap.d_max_size[0], heap_size);
+  }
+
+  void standardize()
+  {
+    Log(warn, "Started standardizing host heap");
+    sort();
+    rearrange();
+    Log(warn, "Finished standardizing host heap");
+  }
+
+  void standardize_async()
+  {
+    if (standardize_thread.joinable())
+      standardize_thread.join();
+
+    standardize_thread = std::thread(&HHEAP::standardize, this);
   }
 
   // print heap in custom format for debugging
