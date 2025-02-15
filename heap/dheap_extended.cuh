@@ -77,12 +77,13 @@ public:
   // sort d_heap in ascending order with thrust
   void sort()
   {
-    Log(debug, "Sorting the heap");
+    Log(debug, "Started sorting device heap");
     if (d_size[0] != 0)
     {
       thrust::device_ptr<NODE> dev_ptr(d_heap);
       thrust::sort(dev_ptr, dev_ptr + d_size[0]);
     }
+    Log(debug, "Finished sorting the device heap");
   }
 
   /* Convert the heap into standard format, defined as:
@@ -94,6 +95,7 @@ public:
   void standardize(int grid_dim)
   {
     sort(); // sort the heap
+    Log(debug, "Started standardizing device heap");
     // define where arrray
     // where[i] = j -> information at i should be stored at j
     // where[i] = -1 -> There is no information at i
@@ -135,6 +137,7 @@ public:
     CUDA_RUNTIME(cudaFree(visited));
     CUDA_RUNTIME(cudaFree(temp_node_space));
     CUDA_RUNTIME(cudaFree(temp_fa_space));
+    Log(debug, "Finished standardizing device heap");
   }
 
   // This function is used to move the later half of the heap to host to free up space on device
@@ -149,7 +152,6 @@ public:
     Log(debug, "Trigger size: %lu", d_trigger_size[0]);
     uint nelements = (d_size[0] - d_size_limit[0] / 2) > (frac * d_size[0]) ? (d_size[0] - d_size_limit[0] / 2) : (frac * d_size[0]);
     uint last = d_size[0] - nelements;
-    Log(debug, "Attaching... last: %u, nelements", last, nelements);
     h_bheap.attach(d_heap, d_node_space, d_fixed_assignment_space, last, nelements);
     d_size[0] = last;
     Log(info, "Host heap size: %lu", h_bheap.size);

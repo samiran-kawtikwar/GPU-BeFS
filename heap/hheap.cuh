@@ -87,12 +87,14 @@ public:
 
   void attach(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
   {
+    Log(debug, "Appending... last: %u, nelements", last, nelements);
     // Append nelements to the heap
     resize(size + nelements);
     cudaMemcpy(&heap[size], &d_heap[last], nelements * sizeof(NODE), cudaMemcpyDeviceToHost);
     cudaMemcpy(&node_space[size], &d_node_space[last], nelements * sizeof(node_info), cudaMemcpyDeviceToHost);
     cudaMemcpy(&fixed_assignment_space[size * psize], &d_fixed_assignment_space[(size_t)last * psize], nelements * psize * sizeof(int), cudaMemcpyDeviceToHost);
 
+    Log(debug, "Appended %d elements to host heap", nelements);
     update_size();
     update_pointers();
 
@@ -108,7 +110,6 @@ public:
   void rearrange()
   {
     // sort();
-    Log(debug, "Started standardizing heap");
     std::vector<int> where(node_space.size(), -1);
     // where[i] = j -> information at i should be stored at j
     for (size_t i = 0; i < heap.size(); i++)
@@ -244,7 +245,7 @@ public:
   {
     Log(warn, "Started standardizing host heap");
     sort();
-    rearrange();
+    rearrange_p();
     Log(warn, "Finished standardizing host heap");
   }
 
@@ -286,7 +287,9 @@ public:
   // Sort in ascending order
   void sort()
   {
+    Log(debug, "Started sorting host heap");
     tbb::parallel_sort(heap.begin(), heap.end());
+    Log(debug, "Finished sorting host heap");
   }
 
 private:

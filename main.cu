@@ -242,7 +242,6 @@ int main(int argc, char **argv)
         Log(info, "Printing memory queue status");
         current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         assert(current_length + d_bheap.d_size[0] == memory_queue_len);
-        Log(debug, "Heap size after finish: %lu", d_bheap.d_size[0]);
         Log(info, "Host heap size: %lu", h_bheap.size);
         // sort the heap and move to cpu
         d_bheap.standardize(nworkers);
