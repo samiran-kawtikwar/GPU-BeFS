@@ -13,3 +13,5 @@ compile.sh
 .prettierrc
 profiling/**
 *.ncu-rep
+*.nsys-rep
+*.sqlite
