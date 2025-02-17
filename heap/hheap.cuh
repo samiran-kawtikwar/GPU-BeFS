@@ -85,7 +85,7 @@ public:
     }
   }
 
-  void attach(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
+  void append(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
   {
     Log(debug, "Appending... last: %u, nelements", last, nelements);
     // Append nelements to the heap

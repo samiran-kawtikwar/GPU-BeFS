@@ -144,15 +144,12 @@ public:
   void move_tail(HHEAP<NODE> &h_bheap, const float frac)
   {
     Log(info, "Launching move tail");
-    auto &h_heap = h_bheap.heap;
-    auto &h_node_space = h_bheap.node_space;
-    auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     Log(debug, "Moving tail to host");
-    d_trigger_size[0] = d_size[0];
-    Log(debug, "Trigger size: %lu", d_trigger_size[0]);
+    // d_trigger_size[0] = d_size[0];
+    // Log(debug, "Trigger size: %lu", d_trigger_size[0]);
     uint nelements = (d_size[0] - d_size_limit[0] / 2) > (frac * d_size[0]) ? (d_size[0] - d_size_limit[0] / 2) : (frac * d_size[0]);
     uint last = d_size[0] - nelements;
-    h_bheap.attach(d_heap, d_node_space, d_fixed_assignment_space, last, nelements);
+    h_bheap.append(d_heap, d_node_space, d_fixed_assignment_space, last, nelements);
     d_size[0] = last;
     Log(info, "Host heap size: %lu", h_bheap.size);
   }

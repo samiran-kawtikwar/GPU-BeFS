@@ -22,10 +22,9 @@ LDFLAGS_CPP ?= -lgurobi_c++ -lgurobi110 -lm -lstdc++ -ltbb
 # cuda flags
 CUDAFLAGS ?= -lineinfo -O3 -std=c++17 -arch=sm_$(ARCH) -gencode=arch=compute_$(ARCH),code=sm_$(ARCH)\
 						-gencode=arch=compute_$(ARCH),code=compute_$(ARCH) -Xcompiler "$(CPPFLAGS)"
-CUDAINC	?=
+CUDAINC	?= -I$(CUDA_HOME)/include
 LDIR_CUDA ?= -L$(CUDA_HOME)/lib64
 LDFLAGS_CUDA ?= -lcuda -lgomp
-
 
 all: $(BUILD_DIR)/main.exe
 
@@ -37,7 +36,7 @@ $(BUILD_DIR)/obj/%.cu.o: %.cu
 	mkdir -p $(BUILD_DIR)/obj/
 	@echo cu obj files are: $(CU_OBJ_FILES)
 	@echo cu files are: $(CU_FILES)
-	$(NVCC) $(CUDAFLAGS)  $(CUDAINC) -c $< -o $@ $(LDIR_CUDA) $(LDFLAGS_CUDA)
+	$(NVCC) $(CUDAFLAGS) $(CUDAINC) -c $< -o $@ $(LDIR_CUDA) $(LDFLAGS_CUDA)
 
 
 # Pattern rule for cpp files

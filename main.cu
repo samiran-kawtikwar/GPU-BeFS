@@ -222,6 +222,7 @@ int main(int argc, char **argv)
     uint current_length = print_queue(request_queue, tickets, head, tail, nworkers);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
+      d_bheap.standardize(nworkers);
       if (h_bheap.standardize_thread.joinable())
       {
         h_bheap.standardize_thread.join();
@@ -243,8 +244,7 @@ int main(int argc, char **argv)
         current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         assert(current_length + d_bheap.d_size[0] == memory_queue_len);
         Log(info, "Host heap size: %lu", h_bheap.size);
-        // sort the heap and move to cpu
-        d_bheap.standardize(nworkers);
+        // move to cpu
         Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
         d_bheap.move_tail(h_bheap, 0.5);
         // Enqueue the deleted half in memory manager
