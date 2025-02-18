@@ -57,6 +57,7 @@ public:
   {
     size = heap.size();
   }
+
   void resize(size_t new_size)
   {
     heap.resize(new_size);
@@ -85,20 +86,116 @@ public:
     }
   }
 
-  void append(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, uint last, uint nelements)
+  void append(NODE *d_heap, node_info *d_node_space, int *d_fixed_assignment_space, size_t last, size_t d_nele)
   {
-    Log(debug, "Appending... last: %u, nelements", last, nelements);
+    Log(debug, "Appending elements: %lu to %lu", last, last + d_nele);
     // Append nelements to the heap
-    resize(size + nelements);
-    cudaMemcpy(&heap[size], &d_heap[last], nelements * sizeof(NODE), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&node_space[size], &d_node_space[last], nelements * sizeof(node_info), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&fixed_assignment_space[size * psize], &d_fixed_assignment_space[(size_t)last * psize], nelements * psize * sizeof(int), cudaMemcpyDeviceToHost);
+    resize(size + d_nele);
+    cudaMemcpy(&heap[size], &d_heap[last], d_nele * sizeof(NODE), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&node_space[size], &d_node_space[last], d_nele * sizeof(node_info), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&fixed_assignment_space[size * psize], &d_fixed_assignment_space[(size_t)last * psize], d_nele * psize * sizeof(int), cudaMemcpyDeviceToHost);
 
-    Log(debug, "Appended %d elements to host heap", nelements);
+    Log(debug, "Appended %lu elements to host heap", d_nele);
     update_size();
     update_pointers();
 
-    standardize_async();
+    standardize();
+  }
+
+  void extended_append(DHEAP<NODE> &d_bheap, std::vector<node_extended> &heap_temp, size_t d_nele)
+  {
+    // Append nelements to the heap
+    auto d_heap = d_bheap.d_heap;
+    NODE *heap_from_device = new NODE[d_bheap.d_size[0]];
+    cudaMemcpy(heap_from_device, d_heap, d_bheap.d_size[0] * sizeof(NODE), cudaMemcpyDeviceToHost);
+#pragma omp parallel for
+    for (size_t i = 0; i < heap_temp.size(); i++)
+    {
+      if (i < size)
+      {
+        heap_temp[i].key = heap[i].key;
+        heap_temp[i].value = heap[i].value;
+        heap_temp[i].stability_index = i;
+      }
+      else
+      {
+        heap_temp[i].key = heap_from_device[i - size].key;
+        heap_temp[i].value = heap_from_device[i - size].value;
+        heap_temp[i].stability_index = i;
+      }
+    }
+    delete[] heap_from_device;
+  }
+
+  void merge(DHEAPExtended<NODE> &d_bheap, size_t &host_last, size_t &dev_last, const float frac = 0.5)
+  {
+    host_last = 0;
+    dev_last = 0;
+    auto dev_ = d_bheap.dev_;
+    auto d_heap = d_bheap.d_heap;
+    auto d_size = d_bheap.d_size[0];
+    auto d_size_limit = d_bheap.d_size_limit[0];
+    // Create a copy of host heap
+    std::vector<node_extended> heap_temp(size + d_size);
+    // Append all nodes to host heap
+    extended_append(d_bheap, heap_temp, d_size);
+    Log(debug, "Appended %d elements to host heap", d_size);
+    Log(debug, "Merged heap size: %lu", heap_temp.size());
+    // for (size_t i = 0; i < heap_temp.size(); i++)
+    //   std::cout << i << "\t" << heap_temp[i].key << "\t" << heap_temp[i].value << std::endl;
+    stable_sort(&heap_temp);
+    // for (size_t i = 0; i < heap_temp.size(); i++)
+    //   std::cout << i << "\t" << heap_temp[i].key << "\t" << heap_temp[i].value << std::endl;
+    size_t d_nele = d_size > d_size_limit * frac ? d_size_limit * frac : d_size;
+
+    Log(debug, "Cutoff at %lu", d_nele);
+    assert(d_nele < heap_temp.size());
+    int loc = getPointerAtt(heap_temp[d_nele].value);
+    Log(warn, "Target pointer location: %d", loc);
+    if (loc == -1)
+    {
+      host_last = (size_t)heap_temp[d_nele].value->id;
+      dev_last = 0;
+      for (int64_t i = d_nele; i >= 0; i--)
+      {
+        if (getPointerAtt(heap_temp[i].value) == dev_)
+        {
+          dev_last = heap_temp[i].value - d_bheap.d_node_space;
+          break;
+        }
+      }
+    }
+    else if (loc == dev_)
+    {
+      dev_last = heap_temp[d_nele].value - d_bheap.d_node_space;
+      host_last = 0;
+      for (int64_t i = d_nele; i >= 0; i--)
+      {
+        if (getPointerAtt(heap_temp[i].value) == -1)
+        {
+          host_last = (size_t)heap_temp[i].value->id;
+          break;
+        }
+      }
+    }
+    else
+    {
+      Log(critical, "Get attributes failed");
+      exit(1);
+    }
+    Log(info, "Host last: %lu, Dev last: %lu", host_last, dev_last);
+    if (host_last + dev_last > d_nele)
+    {
+      Log(critical, "Merge failed");
+      // print("Host heap");
+      // d_bheap.format_print("Device heap");
+      // float *temp_keys = new float[heap_temp.size()];
+      // for (size_t i = 0; i < heap_temp.size(); i++)
+      //   temp_keys[i] = heap_temp[i].key;
+      // printHostArray(temp_keys, heap_temp.size(), "Merged heap");
+      // delete[] temp_keys;
+      exit(1);
+    }
   }
 
   /* Convert the heap into standard format, defined as:
@@ -264,7 +361,7 @@ public:
       Log(critical, "%s", name.c_str());
     for (size_t i = 0; i < heap.size(); i++)
     {
-      Log<nun>(info, "Node: %d, LB: %.0f, level: %d ----> \t", i, heap[i].key, heap[i].value->level);
+      Log<nun>(info, "Node: %d, LB: %f, level: %d ----> \t", i, heap[i].key, heap[i].value->level);
       for (size_t j = 0; j < psize - 1; j++)
       {
         Log<comma>(debug, "%d", heap[i].value->fixed_assignments[j]);
@@ -284,12 +381,48 @@ public:
     Log(info, "\n");
   }
 
-  // Sort in ascending order
-  void sort()
+  void check_std(std::string name = NULL)
   {
+    bool failed = false;
+    if (name != "NULL")
+      Log(critical, "%s", name.c_str());
+    for (size_t i = 0; i < heap.size(); i++)
+    {
+      if (heap[i].value->id != i)
+      {
+        Log(critical, "Standardization failed at index %lu", i);
+        failed = true;
+        break;
+      }
+    }
+    if (failed)
+      print("Standardized heap");
+  }
+
+  // Sort in ascending order
+  void sort(std::vector<NODE> *heap_ = nullptr)
+  { // Change parameter to a pointer
+    if (heap_ == nullptr)
+      heap_ = &heap; // Assign the address of the member vector
+
+    // assign stability_index
+
     Log(debug, "Started sorting host heap");
-    tbb::parallel_sort(heap.begin(), heap.end());
+    tbb::parallel_sort(heap_->begin(), heap_->end());
     Log(debug, "Finished sorting host heap");
+  }
+
+  // Uses stability index to maintain order of elements with same key
+  void stable_sort(std::vector<node_extended> *heap_)
+  {
+// Reassign stability index
+#pragma omp parallel for
+    for (size_t i = 0; i < heap_->size(); i++)
+      (*heap_)[i].stability_index = i;
+
+    Log(debug, "Started stable sorting host heap");
+    tbb::parallel_sort(heap_->begin(), heap_->end());
+    Log(debug, "Finished stable sorting host heap");
   }
 
 private:

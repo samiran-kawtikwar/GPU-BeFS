@@ -35,12 +35,6 @@ enum ExitCode
   UNKNOWN_ERROR
 };
 
-enum Location
-{
-  HOST = -1,
-  DEVICE
-};
-
 const char *ExitCode_text[] = {
     "OPTIMAL",
     "HEAP_FULL",
@@ -105,24 +99,29 @@ struct node_info
 struct node
 {
   float key;
-  Location location; // To identify where the value is stored
   node_info *value;
+  size_t stability_index;
   __host__ __device__ node() {};
   __host__ __device__ node(float a, node_info *b)
   {
     key = a;
-#ifdef __CUDA_ARCH__
-    location = DEVICE; // Compiling for device
-#else
-    location = HOST; // Compiling for host
-#endif
     value = b;
   }
-
-  // Comparison operator
   __host__ __device__ bool operator<(const node &other) const
   {
-    return key < other.key; // Compare based on the key
+    return key < other.key;
+  }
+};
+
+struct node_extended : public node
+{
+  size_t stability_index;
+  node_extended() {};
+  bool operator<(const node_extended &other) const
+  {
+    if (key == other.key)
+      return stability_index < other.stability_index;
+    return key < other.key;
   }
 };
 

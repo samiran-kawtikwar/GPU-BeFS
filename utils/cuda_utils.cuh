@@ -47,3 +47,23 @@ __device__ __forceinline__ T atomicRead(T *addr)
   // The addition of T(0) is guaranteed to leave the value unchanged.
   return atomicAdd(addr, static_cast<T>(0));
 }
+
+// Returns the device ID of the pointer, or -1 if pointer is on host
+int getPointerAtt(void *ptr)
+{
+  cudaPointerAttributes attributes;
+  cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
+
+  if (err == cudaSuccess)
+  {
+    if (attributes.type == cudaMemoryTypeDevice)
+    {
+      return attributes.device; // Return device ID
+    }
+    else if (attributes.type == cudaMemoryTypeHost)
+    {
+      return -1; // Host memory
+    }
+  }
+  return -1; // Unrecognized pointer
+}

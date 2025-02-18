@@ -84,6 +84,7 @@ public:
       thrust::sort(dev_ptr, dev_ptr + d_size[0]);
     }
     Log(debug, "Finished sorting the device heap");
+    CUDA_RUNTIME(cudaDeviceSynchronize());
   }
 
   /* Convert the heap into standard format, defined as:
@@ -141,17 +142,16 @@ public:
   }
 
   // This function is used to move the later half of the heap to host to free up space on device
-  void move_tail(HHEAP<NODE> &h_bheap, const float frac)
+  void move_tail(HHEAP<NODE> &h_bheap, const size_t from)
   {
-    Log(info, "Launching move tail");
-    Log(debug, "Moving tail to host");
+    Log(debug, "Moving device tail to host");
     // d_trigger_size[0] = d_size[0];
     // Log(debug, "Trigger size: %lu", d_trigger_size[0]);
-    uint nelements = (d_size[0] - d_size_limit[0] / 2) > (frac * d_size[0]) ? (d_size[0] - d_size_limit[0] / 2) : (frac * d_size[0]);
-    uint last = d_size[0] - nelements;
-    h_bheap.append(d_heap, d_node_space, d_fixed_assignment_space, last, nelements);
-    d_size[0] = last;
+    size_t nelements = d_size[0] - from;
+    h_bheap.append(d_heap, d_node_space, d_fixed_assignment_space, from, nelements);
+    d_size[0] = from;
     Log(info, "Host heap size: %lu", h_bheap.size);
+    Log(info, "Device heap size: %lu", d_size[0]);
   }
 
   // Move the first half of the host heap to device
@@ -161,7 +161,6 @@ public:
     auto &h_node_space = h_bheap.node_space;
     auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     size_t start = d_size[0];
-    assert(start == 0);
     CUDA_RUNTIME(cudaMemcpy(d_heap + start, h_heap.data(), sizeof(NODE) * nelements, cudaMemcpyHostToDevice));
     CUDA_RUNTIME(cudaMemcpy(d_node_space + start, h_node_space.data(), sizeof(node_info) * nelements, cudaMemcpyHostToDevice));
     CUDA_RUNTIME(cudaMemcpy(d_fixed_assignment_space + start * psize, h_fixed_assignment_space.data(), nelements * psize * sizeof(int), cudaMemcpyHostToDevice));
@@ -177,8 +176,25 @@ public:
     h_bheap.update_size();
     h_bheap.update_pointers();
     Log(debug, "Finished moving front to device");
-    // format_print("Device heap after moving front");
-    // h_bheap.print("Host moving front");
+  }
+
+  // Merge the device heap with host heap and get frac elements from the merged heap
+  void merge(HHEAP<NODE> &h_bheap, const float frac = 0.5)
+  {
+    size_t host_last = 0, dev_last = 0;
+    Log(info, "Launching merge");
+    h_bheap.merge(*this, host_last, dev_last, frac);
+    Log(debug, "Finished merging device and host heap");
+    move_tail(h_bheap, dev_last);
+    if (host_last > 0)
+    {
+      Log(debug, "Moving %lu elements from host front to device", host_last);
+      move_front(h_bheap, host_last);
+    }
+    assert(d_size[0] == host_last + dev_last);
+    Log(info, "Device heap size: %lu", d_size[0]);
+    sort();
+    h_bheap.standardize();
   }
 
   // Utility functions
