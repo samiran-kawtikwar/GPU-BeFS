@@ -106,10 +106,10 @@ public:
     standardize();
   }
 
-  void merge(DHEAPExtended<NODE> &d_bheap, size_t &host_last, size_t &dev_last, const float frac = 0.5)
+  void merge(DHEAPExtended<NODE> &d_bheap, size_t &host_nele, size_t &dev_nele, const float frac = 0.5)
   {
-    host_last = 0;
-    dev_last = 0;
+    host_nele = 0;
+    dev_nele = 0;
     auto dev_ = d_bheap.dev_;
     auto d_heap = d_bheap.d_heap;
     auto d_size = d_bheap.d_size[0];
@@ -122,34 +122,34 @@ public:
     std::merge(std::execution::par, device_heap.begin(), device_heap.end(),
                heap.begin(), heap.end(),
                heap_temp.begin());
-
+    Log(debug, "Merged heap size: %lu", heap_temp.size());
     size_t d_nele = d_size > d_size_limit * frac ? d_size_limit * frac : d_size;
     Log(debug, "Cutoff at %lu", d_nele);
-    assert(d_nele < heap_temp.size());
-    int loc = getPointerAtt(heap_temp[d_nele].value);
-    Log(warn, "Target pointer location: %d", loc);
+    assert((d_nele > 0) && (d_nele < heap_temp.size()));
+
+    size_t add = d_nele - 1;
+    int loc = getPointerAtt(heap_temp[add].value);
+    Log(debug, "Target pointer location: %s", loc >= 0 ? "DEVICE " + loc : "HOST");
     if (loc == -1)
     {
-      host_last = (size_t)heap_temp[d_nele].value->id;
-      dev_last = 0;
-      for (int64_t i = d_nele; i >= 0; i--)
+      host_nele = (size_t)heap_temp[add].value->id + 1;
+      for (int64_t i = add - 1; i >= 0; i--)
       {
         if (getPointerAtt(heap_temp[i].value) == dev_)
         {
-          dev_last = heap_temp[i].value - d_bheap.d_node_space;
+          dev_nele = heap_temp[i].value - d_bheap.d_node_space + 1;
           break;
         }
       }
     }
     else if (loc == dev_)
     {
-      dev_last = heap_temp[d_nele].value - d_bheap.d_node_space;
-      host_last = 0;
-      for (int64_t i = d_nele; i >= 0; i--)
+      dev_nele = heap_temp[add].value - d_bheap.d_node_space + 1;
+      for (int64_t i = add - 1; i >= 0; i--)
       {
         if (getPointerAtt(heap_temp[i].value) == -1)
         {
-          host_last = (size_t)heap_temp[i].value->id;
+          host_nele = (size_t)heap_temp[i].value->id + 1;
           break;
         }
       }
@@ -159,19 +159,8 @@ public:
       Log(critical, "Get attributes failed");
       exit(1);
     }
-    Log(info, "Host last: %lu, Dev last: %lu", host_last, dev_last);
-    if (host_last + dev_last > d_nele)
-    {
-      Log(critical, "Merge failed");
-      // print("Host heap");
-      // d_bheap.format_print("Device heap");
-      // float *temp_keys = new float[heap_temp.size()];
-      // for (size_t i = 0; i < heap_temp.size(); i++)
-      //   temp_keys[i] = heap_temp[i].key;
-      // printHostArray(temp_keys, heap_temp.size(), "Merged heap");
-      // delete[] temp_keys;
-      exit(1);
-    }
+    Log(info, "Host nele: %lu, Dev nele: %lu", host_nele, dev_nele);
+    assert(host_nele + dev_nele == d_nele);
     heap_temp.clear();
     device_heap.clear();
   }
@@ -324,9 +313,9 @@ public:
   {
     Log(warn, "Started standardizing host heap");
     sort();
-    check_std("Checking host before rearrange", false);
+    check_std("Checking host before rearrange", false, false);
     rearrange_p();
-    check_std("Checking host after rearrange", false);
+    check_std("Checking host after rearrange", true, false);
     Log(warn, "Finished standardizing host heap");
   }
 
@@ -365,11 +354,11 @@ public:
     Log(info, "\n");
   }
 
-  void check_std(std::string name = NULL, bool print_heap = true)
+  void check_std(std::string name = NULL, bool check_id = false, bool print_heap = true)
   {
     bool failed = false;
     if (name != "NULL")
-      Log(critical, "%s", name.c_str());
+      Log(info, "%s", name.c_str());
 
     for (size_t i = 0; i < heap.size(); i++)
     {
@@ -382,6 +371,12 @@ public:
       if (count != heap[i].value->level)
       {
         Log(critical, "Level mismatch at index %lu", i);
+        failed = true;
+        break;
+      }
+      if (check_id && heap[i].value->id != i)
+      {
+        Log(critical, "ID mismatch at index %lu", i);
         failed = true;
         break;
       }

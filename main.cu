@@ -246,11 +246,11 @@ int main(int argc, char **argv)
         // sort the heap and move to cpu
         d_bheap.standardize(nworkers);
         Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
-        // h_bheap.check_std("Checking host heap before merging");
-        d_bheap.check_std("Device heap before merging");
+        h_bheap.check_std("Checking host heap before merging", true, false);
+        d_bheap.check_std("Checked device heap before merging", true, false);
         d_bheap.merge(h_bheap, 0.5);
-        // h_bheap.check_std("Checking host heap after merging");
-        d_bheap.check_std("Device heap after merging");
+        h_bheap.check_std("Checking host heap after merging", true, false);
+        d_bheap.check_std("Checked device heap after merging", false, false);
         // Enqueue the deleted half in memory manager
         Log(info, "Device heap size post move: %lu", d_bheap.d_size[0]);
       }

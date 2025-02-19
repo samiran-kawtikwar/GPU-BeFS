@@ -95,8 +95,8 @@ public:
   */
   void standardize(int grid_dim)
   {
+    Log(info, "Started standardizing device heap");
     sort(); // sort the heap
-    Log(debug, "Started standardizing device heap");
     // define where arrray
     // where[i] = j -> information at i should be stored at j
     // where[i] = -1 -> There is no information at i
@@ -129,7 +129,7 @@ public:
                temp_node_space, temp_fa_space, 2 * grid_dim, psize);
 
     // printDeviceMatrix(d_fixed_assignment_space, size_limit, psize, "Fixed assignments:");
-    execKernel(rearrange, grid_dim, block_dim, dev_, true, *this,
+    execKernel(rearrange, grid_dim, block_dim, dev_, false, *this,
                where, visited, temp_node_space, psize);
     // printDeviceArray(where, size_limit, "where");
     // printDeviceMatrix(d_fixed_assignment_space, d_size_limit[0], psize, "Fixed assignments:");
@@ -138,7 +138,7 @@ public:
     CUDA_RUNTIME(cudaFree(visited));
     CUDA_RUNTIME(cudaFree(temp_node_space));
     CUDA_RUNTIME(cudaFree(temp_fa_space));
-    Log(debug, "Finished standardizing device heap");
+    Log(info, "Finished standardizing device heap");
   }
 
   // This function is used to move the later half of the heap to host to free up space on device
@@ -182,17 +182,18 @@ public:
   // Merge the device heap with host heap and get frac elements from the merged heap
   void merge(HHEAP<NODE> &h_bheap, const float frac = 0.5)
   {
-    size_t host_last = 0, dev_last = 0;
-    Log(info, "Launching merge");
-    h_bheap.merge(*this, host_last, dev_last, frac);
+    size_t host_nele = 0, dev_nele = 0;
+    Log(debug, "Launching merge");
+    h_bheap.merge(*this, host_nele, dev_nele, frac);
     Log(debug, "Finished merging device and host heap");
-    move_tail(h_bheap, dev_last);
-    if (host_last > 0)
+    move_tail(h_bheap, dev_nele);
+    if (host_nele > 0)
     {
-      Log(debug, "Moving %lu elements from host front to device %lu", host_last, d_size[0]);
-      move_front(h_bheap, host_last);
+      Log(debug, "Moving %lu elements from host front to device %lu", host_nele, d_size[0]);
+      move_front(h_bheap, host_nele);
     }
-    assert(d_size[0] == host_last + dev_last);
+    check_std("After merge", true, false);
+    assert(d_size[0] == host_nele + dev_nele);
     sort();
     h_bheap.standardize();
   }
@@ -223,11 +224,11 @@ public:
     h_heap.cleanup();
   }
 
-  void check_std(std::string name = NULL)
+  void check_std(std::string name = NULL, bool check_id = false, bool print_heap = false)
   {
     HHEAP<NODE> h_heap(psize);
     this->to_host(h_heap);
-    h_heap.check_std(name, false);
+    h_heap.check_std(name, check_id, print_heap);
 
     // free memory
     h_heap.cleanup();
