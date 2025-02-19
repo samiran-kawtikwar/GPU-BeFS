@@ -3,6 +3,7 @@
 #include <cuda/atomic>
 #include <cuda_runtime.h>
 #include "queue_utils.cuh"
+#include "../utils/logger.cuh"
 typedef uint32_t queue_type;
 
 __device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
@@ -107,9 +108,10 @@ __global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uin
     if (threadIdx.x == 0 && blockIdx.x == 0)
     {
         *current_length = tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed);
+#ifdef __DEBUG__
         printf("Queue: \t Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
                tail_queue->load(cuda::memory_order_relaxed), *current_length);
-
+#endif
         // // print the queue
         // for (uint i = head_queue->load(cuda::memory_order_relaxed); i < tail_queue->load(cuda::memory_order_relaxed); i++)
         // {
