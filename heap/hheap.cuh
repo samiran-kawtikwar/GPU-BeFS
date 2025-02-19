@@ -3,6 +3,10 @@
 #include "../defs.cuh"
 #include "../queue/queue.cuh"
 #include <thread>
+#include <vector>
+#include <list>
+#include <algorithm>
+#include <execution>
 
 template <typename NODE>
 class DHEAP; // Forward declaration
@@ -102,31 +106,6 @@ public:
     standardize();
   }
 
-  void extended_append(DHEAP<NODE> &d_bheap, std::vector<node_extended> &heap_temp, size_t d_nele)
-  {
-    // Append nelements to the heap
-    auto d_heap = d_bheap.d_heap;
-    NODE *heap_from_device = new NODE[d_bheap.d_size[0]];
-    cudaMemcpy(heap_from_device, d_heap, d_bheap.d_size[0] * sizeof(NODE), cudaMemcpyDeviceToHost);
-#pragma omp parallel for
-    for (size_t i = 0; i < heap_temp.size(); i++)
-    {
-      if (i < size)
-      {
-        heap_temp[i].key = heap[i].key;
-        heap_temp[i].value = heap[i].value;
-        heap_temp[i].stability_index = i;
-      }
-      else
-      {
-        heap_temp[i].key = heap_from_device[i - size].key;
-        heap_temp[i].value = heap_from_device[i - size].value;
-        heap_temp[i].stability_index = i;
-      }
-    }
-    delete[] heap_from_device;
-  }
-
   void merge(DHEAPExtended<NODE> &d_bheap, size_t &host_last, size_t &dev_last, const float frac = 0.5)
   {
     host_last = 0;
@@ -135,19 +114,16 @@ public:
     auto d_heap = d_bheap.d_heap;
     auto d_size = d_bheap.d_size[0];
     auto d_size_limit = d_bheap.d_size_limit[0];
-    // Create a copy of host heap
-    std::vector<node_extended> heap_temp(size + d_size);
-    // Append all nodes to host heap
-    extended_append(d_bheap, heap_temp, d_size);
-    Log(debug, "Appended %d elements to host heap", d_size);
-    Log(debug, "Merged heap size: %lu", heap_temp.size());
-    // for (size_t i = 0; i < heap_temp.size(); i++)
-    //   std::cout << i << "\t" << heap_temp[i].key << "\t" << heap_temp[i].value << std::endl;
-    stable_sort(&heap_temp);
-    // for (size_t i = 0; i < heap_temp.size(); i++)
-    //   std::cout << i << "\t" << heap_temp[i].key << "\t" << heap_temp[i].value << std::endl;
-    size_t d_nele = d_size > d_size_limit * frac ? d_size_limit * frac : d_size;
 
+    // Create a copy of host heap
+    std::vector<NODE> heap_temp(size + d_size);
+    std::vector<NODE> device_heap(d_size);
+    cudaMemcpy(device_heap.data(), d_heap, d_size * sizeof(NODE), cudaMemcpyDeviceToHost);
+    std::merge(std::execution::par, device_heap.begin(), device_heap.end(),
+               heap.begin(), heap.end(),
+               heap_temp.begin());
+
+    size_t d_nele = d_size > d_size_limit * frac ? d_size_limit * frac : d_size;
     Log(debug, "Cutoff at %lu", d_nele);
     assert(d_nele < heap_temp.size());
     int loc = getPointerAtt(heap_temp[d_nele].value);
@@ -196,6 +172,8 @@ public:
       // delete[] temp_keys;
       exit(1);
     }
+    heap_temp.clear();
+    device_heap.clear();
   }
 
   /* Convert the heap into standard format, defined as:
@@ -266,7 +244,7 @@ public:
 
   void rearrange_p()
   {
-    std::vector<int> where(node_space.size(), -1);
+    std::vector<int> where(heap.size(), -1);
     std::vector<node_info> cache_node(node_space.size());
     std::vector<int> cache_int(node_space.size());
 // where[i] = j -> information at i should be stored at j
@@ -275,14 +253,18 @@ public:
       // Fill where array
 #pragma omp for schedule(static)
       for (size_t i = 0; i < heap.size(); i++)
-        where[heap[i].value->id] = i;
+        where[i] = heap[i].value->id;
 
+// #pragma omp for schedule(static)
 #pragma omp for schedule(static)
       for (size_t i = 0; i < heap.size(); i++)
       {
-        int my_id = heap[i].value->id;
-        cache_node[i] = node_space[my_id];
+        cache_node[i] = node_space[where[i]]; // gather the node values
+        // printf("%lu <- %d \t level %u\n", i, my_id, cache_node[i].level);
       }
+      // for (size_t i = 0; i < heap.size(); i++)
+      //   printf("%lu, %u\n", i, cache_node[i].level);
+
 #pragma omp for schedule(static)
       for (size_t i = 0; i < heap.size(); i++)
         node_space[i] = cache_node[i];
@@ -291,8 +273,7 @@ public:
 #pragma omp for schedule(static)
         for (size_t i = 0; i < heap.size(); i++)
         {
-          int my_id = heap[i].value->id;
-          cache_int[i] = fixed_assignment_space[my_id * psize + j];
+          cache_int[i] = fixed_assignment_space[where[i] * psize + j];
         }
 #pragma omp for schedule(static)
         for (size_t i = 0; i < heap.size(); i++)
@@ -313,7 +294,8 @@ public:
     cache_int.clear();
   }
 
-  void to_device(DHEAP<NODE> &d_heap)
+  void
+  to_device(DHEAP<NODE> &d_heap)
   {
     size_t size_limit = node_space.size();
     size_t heap_size = heap.size();
@@ -342,7 +324,9 @@ public:
   {
     Log(warn, "Started standardizing host heap");
     sort();
+    check_std("Checking host before rearrange", false);
     rearrange_p();
+    check_std("Checking host after rearrange", false);
     Log(warn, "Finished standardizing host heap");
   }
 
@@ -381,22 +365,30 @@ public:
     Log(info, "\n");
   }
 
-  void check_std(std::string name = NULL)
+  void check_std(std::string name = NULL, bool print_heap = true)
   {
     bool failed = false;
     if (name != "NULL")
       Log(critical, "%s", name.c_str());
+
     for (size_t i = 0; i < heap.size(); i++)
     {
-      if (heap[i].value->id != i)
+      uint count = 0;
+      for (size_t j = 0; j < psize; j++)
       {
-        Log(critical, "Standardization failed at index %lu", i);
+        if (heap[i].value->fixed_assignments[j] > 0)
+          count++;
+      }
+      if (count != heap[i].value->level)
+      {
+        Log(critical, "Level mismatch at index %lu", i);
         failed = true;
         break;
       }
     }
-    if (failed)
-      print("Standardized heap");
+    if (print_heap || failed)
+      print("Host heap");
+    assert(failed == false);
   }
 
   // Sort in ascending order
@@ -408,21 +400,8 @@ public:
     // assign stability_index
 
     Log(debug, "Started sorting host heap");
-    tbb::parallel_sort(heap_->begin(), heap_->end());
+    std::sort(std::execution::par, heap_->begin(), heap_->end());
     Log(debug, "Finished sorting host heap");
-  }
-
-  // Uses stability index to maintain order of elements with same key
-  void stable_sort(std::vector<node_extended> *heap_)
-  {
-// Reassign stability index
-#pragma omp parallel for
-    for (size_t i = 0; i < heap_->size(); i++)
-      (*heap_)[i].stability_index = i;
-
-    Log(debug, "Started stable sorting host heap");
-    tbb::parallel_sort(heap_->begin(), heap_->end());
-    Log(debug, "Finished stable sorting host heap");
   }
 
 private:

@@ -113,18 +113,6 @@ struct node
   }
 };
 
-struct node_extended : public node
-{
-  size_t stability_index;
-  node_extended() {};
-  bool operator<(const node_extended &other) const
-  {
-    if (key == other.key)
-      return stability_index < other.stability_index;
-    return key < other.key;
-  }
-};
-
 struct d_instruction
 {
   TaskType type;

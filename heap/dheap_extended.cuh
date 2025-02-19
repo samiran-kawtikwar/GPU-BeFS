@@ -161,6 +161,7 @@ public:
     auto &h_node_space = h_bheap.node_space;
     auto &h_fixed_assignment_space = h_bheap.fixed_assignment_space;
     size_t start = d_size[0];
+    Log(debug, "Host best: %f", h_heap[0].key);
     CUDA_RUNTIME(cudaMemcpy(d_heap + start, h_heap.data(), sizeof(NODE) * nelements, cudaMemcpyHostToDevice));
     CUDA_RUNTIME(cudaMemcpy(d_node_space + start, h_node_space.data(), sizeof(node_info) * nelements, cudaMemcpyHostToDevice));
     CUDA_RUNTIME(cudaMemcpy(d_fixed_assignment_space + start * psize, h_fixed_assignment_space.data(), nelements * psize * sizeof(int), cudaMemcpyHostToDevice));
@@ -188,11 +189,10 @@ public:
     move_tail(h_bheap, dev_last);
     if (host_last > 0)
     {
-      Log(debug, "Moving %lu elements from host front to device", host_last);
+      Log(debug, "Moving %lu elements from host front to device %lu", host_last, d_size[0]);
       move_front(h_bheap, host_last);
     }
     assert(d_size[0] == host_last + dev_last);
-    Log(info, "Device heap size: %lu", d_size[0]);
     sort();
     h_bheap.standardize();
   }
@@ -218,6 +218,16 @@ public:
     HHEAP<NODE> h_heap(psize);
     this->to_host(h_heap);
     h_heap.print(name);
+
+    // free memory
+    h_heap.cleanup();
+  }
+
+  void check_std(std::string name = NULL)
+  {
+    HHEAP<NODE> h_heap(psize);
+    this->to_host(h_heap);
+    h_heap.check_std(name, false);
 
     // free memory
     h_heap.cleanup();

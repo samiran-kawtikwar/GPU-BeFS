@@ -113,7 +113,7 @@ int main(int argc, char **argv)
   // Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   nworkers *= deviceProp.multiProcessorCount;
   nsubworkers = BlockSize / TileSize;
-  // nworkers = 30;
+  nworkers = 5;
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   // Log(debug, "Max potential block size: %d", nb1);
@@ -142,9 +142,9 @@ int main(int argc, char **argv)
   size_t available, total;
   CUDA_RUNTIME(cudaMemGetInfo(&available, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
-  size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (available * 0.1) / memory_queue_weight; // Keeping 5% headroom
-  // size_t memory_queue_len = 1500;
+  // size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
+  // size_t memory_queue_len = (available * 0.1) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = 150;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP
@@ -217,12 +217,11 @@ int main(int argc, char **argv)
     execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
     CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
     Log(critical, "Exit code: %s", ExitCode_text[exit_code]);
-    Log(debug, "Device heap size at termination: %lu", d_bheap.d_size[0]);
-    Log(info, "Printing request queue status");
+    Log(info, "Device heap size at termination: %lu", d_bheap.d_size[0]);
+    Log(debug, "Printing request queue status");
     uint current_length = print_queue(request_queue, tickets, head, tail, nworkers);
     if (exit_code == HEAP_FULL || (exit_code == INFEASIBLE && h_bheap.size > 0))
     {
-      d_bheap.standardize(nworkers);
       if (h_bheap.standardize_thread.joinable())
       {
         h_bheap.standardize_thread.join();
@@ -235,25 +234,30 @@ int main(int argc, char **argv)
         {
           Log(debug, "Printing memory queue status");
           print_queue(memory_queue, tickets, head, tail, memory_queue_len);
-          execKernel(finish_requests, 1, 32, dev_, true,
+          execKernel(finish_requests, 1, 32, dev_, false,
                      queue_caller(request_queue, tickets, head, tail), nworkers,
                      d_bheap, d_queue_space);
         }
-        Log(debug, "Device heap size after finish: %lu", d_bheap.d_size[0]);
-        Log(info, "Printing memory queue status");
+        Log(info, "Device heap size after finish: %lu", d_bheap.d_size[0]);
+        Log(debug, "Printing memory queue status");
         current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         assert(current_length + d_bheap.d_size[0] == memory_queue_len);
         Log(info, "Host heap size: %lu", h_bheap.size);
-        // move to cpu
+        // sort the heap and move to cpu
+        d_bheap.standardize(nworkers);
         Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
-        d_bheap.move_tail(h_bheap, 0.5);
+        // h_bheap.check_std("Checking host heap before merging");
+        d_bheap.check_std("Device heap before merging");
+        d_bheap.merge(h_bheap, 0.5);
+        // h_bheap.check_std("Checking host heap after merging");
+        d_bheap.check_std("Device heap after merging");
         // Enqueue the deleted half in memory manager
         Log(info, "Device heap size post move: %lu", d_bheap.d_size[0]);
       }
       else if (exit_code == INFEASIBLE)
       {
         assert(d_bheap.d_size[0] == 0);
-        Log(info, "Printing memory queue status");
+        Log(debug, "Printing memory queue status");
         uint current_length = print_queue(memory_queue, tickets, head, tail, memory_queue_len);
         assert(current_length + d_bheap.d_size[0] == memory_queue_len);
         Log(info, "Device heap size pre move: %lu", d_bheap.d_size[0]);
