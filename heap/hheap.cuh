@@ -69,10 +69,10 @@ public:
     fixed_assignment_space.resize(new_size * psize);
   }
 
-  void update_pointers(const size_t start = 0)
+  void update_pointers()
   {
-#pragma omp paralle for
-    for (size_t i = start; i < heap.size(); i++)
+#pragma omp parallel for
+    for (size_t i = 0; i < heap.size(); i++)
     {
       heap[i].value = &node_space[i];
       heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
@@ -92,7 +92,6 @@ public:
     Log(debug, "Appended %lu elements to host heap", d_nele);
     update_pointers();
     update_size();
-    standardize();
   }
 
   void merge(DHEAPExtended<NODE> &d_bheap, size_t &host_nele, size_t &dev_nele, const float frac = 0.5)
@@ -301,8 +300,10 @@ public:
   void standardize()
   {
     Log(warn, "Started standardizing host heap");
+    check_std("Checking host before sorting", false, false);
     sort();
     check_std("Checking host before rearrange", false, false);
+    Log(debug, "Launching rearrange_p");
     rearrange_p();
     check_std("Checking host after rearrange", true, false);
     Log(warn, "Finished standardizing host heap");
