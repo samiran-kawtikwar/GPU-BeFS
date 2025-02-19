@@ -185,6 +185,8 @@ public:
     size_t host_nele = 0, dev_nele = 0;
     Log(debug, "Launching merge");
     h_bheap.merge(*this, host_nele, dev_nele, frac);
+    assert(host_nele <= h_bheap.size);
+    assert(dev_nele <= d_size[0]);
     Log(debug, "Finished merging device and host heap");
     move_tail(h_bheap, dev_nele);
     if (host_nele > 0)
@@ -192,7 +194,7 @@ public:
       Log(debug, "Moving %lu elements from host front to device %lu", host_nele, d_size[0]);
       move_front(h_bheap, host_nele);
     }
-    check_std("After merge", true, false);
+    check_std("Check device after merge", true, false);
     assert(d_size[0] == host_nele + dev_nele);
     sort();
     h_bheap.standardize();

@@ -69,20 +69,10 @@ public:
     fixed_assignment_space.resize(new_size * psize);
   }
 
-  void append(NODE &node)
-  {
-    heap.push_back(node);
-    node_space.push_back(node.value);
-    for (size_t i = 0; i < psize; i++)
-    {
-      fixed_assignment_space.push_back(node.value->fixed_assignments[i]);
-    }
-  }
-
-  void update_pointers()
+  void update_pointers(const size_t start = 0)
   {
 #pragma omp paralle for
-    for (size_t i = 0; i < size; i++)
+    for (size_t i = start; i < heap.size(); i++)
     {
       heap[i].value = &node_space[i];
       heap[i].value->fixed_assignments = &fixed_assignment_space[i * psize];
@@ -100,9 +90,8 @@ public:
     cudaMemcpy(&fixed_assignment_space[size * psize], &d_fixed_assignment_space[(size_t)last * psize], d_nele * psize * sizeof(int), cudaMemcpyDeviceToHost);
 
     Log(debug, "Appended %lu elements to host heap", d_nele);
-    update_size();
     update_pointers();
-
+    update_size();
     standardize();
   }
 
@@ -122,14 +111,14 @@ public:
     std::merge(std::execution::par, device_heap.begin(), device_heap.end(),
                heap.begin(), heap.end(),
                heap_temp.begin());
-    Log(debug, "Merged heap size: %lu", heap_temp.size());
+    Log(debug, "Merge sorted heap size: %lu", heap_temp.size());
     size_t d_nele = d_size > d_size_limit * frac ? d_size_limit * frac : d_size;
     Log(debug, "Cutoff at %lu", d_nele);
     assert((d_nele > 0) && (d_nele < heap_temp.size()));
 
     size_t add = d_nele - 1;
     int loc = getPointerAtt(heap_temp[add].value);
-    Log(debug, "Target pointer location: %s", loc >= 0 ? "DEVICE " + loc : "HOST");
+    Log(debug, "Target pointer location: %s", loc >= 0 ? "DEVICE" : "HOST");
     if (loc == -1)
     {
       host_nele = (size_t)heap_temp[add].value->id + 1;
@@ -323,7 +312,7 @@ public:
   {
     if (standardize_thread.joinable())
       standardize_thread.join();
-
+    Log(info, "Launching asynchronous standardization of host heap");
     standardize_thread = std::thread(&HHEAP::standardize, this);
   }
 
