@@ -110,10 +110,10 @@ int main(int argc, char **argv)
   int nworkers, nsubworkers; // equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
   cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
-  // Log(debug, "Max concurrent blocks per SM: %d", nworkers);
+  Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   nworkers *= deviceProp.multiProcessorCount;
   nsubworkers = BlockSize / TileSize;
-  nworkers = 5;
+  // nworkers = 5;
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   // Log(debug, "Max potential block size: %d", nb1);
@@ -142,9 +142,9 @@ int main(int argc, char **argv)
   size_t available, total;
   CUDA_RUNTIME(cudaMemGetInfo(&available, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - available) * 1.0) / total * 100);
-  // size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  // size_t memory_queue_len = (available * 0.1) / memory_queue_weight; // Keeping 5% headroom
-  size_t memory_queue_len = 150;
+  size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
+  size_t memory_queue_len = (available * 0.095) / memory_queue_weight; // Keeping 5% headroom
+  // size_t memory_queue_len = 150;
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create DHEAP

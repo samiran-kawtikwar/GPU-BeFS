@@ -228,12 +228,14 @@ public:
 
   void check_std(std::string name = NULL, bool check_id = false, bool print_heap = false)
   {
+#ifdef __DEBUG__
     HHEAP<NODE> h_heap(psize);
     this->to_host(h_heap);
     h_heap.check_std(name, check_id, print_heap);
 
     // free memory
     h_heap.cleanup();
+#endif
   }
 
   void print_node_space(const char *label)

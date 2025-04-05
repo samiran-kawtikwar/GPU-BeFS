@@ -346,6 +346,7 @@ public:
 
   void check_std(std::string name = NULL, bool check_id = false, bool print_heap = true)
   {
+#ifdef __DEBUG__
     bool failed = false;
     if (name != "NULL")
       Log(info, "%s", name.c_str());
@@ -374,6 +375,7 @@ public:
     if (print_heap || failed)
       print("Host heap");
     assert(failed == false);
+#endif
   }
 
   // Sort in ascending order

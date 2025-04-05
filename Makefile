@@ -5,7 +5,7 @@ ARCH := $(shell ~/get_SM.sh)
 BUILD_DIR ?=./build
 
 # Find all source files
-EXCLUDED_DIRS := scratch build scripts tests logs dev # Add the directories you want to exclude here
+EXCLUDED_DIRS := scratch build scripts tests logs dev .conda # Add the directories you want to exclude here
 CU_FILES := $(shell find . -name '*.cu' $(addprefix -not -path "./", $(addsuffix "/*", $(EXCLUDED_DIRS))))
 CPP_FILES := $(shell find . -name '*.cpp' $(addprefix -not -path "./", $(addsuffix "/*", $(EXCLUDED_DIRS))))
 
