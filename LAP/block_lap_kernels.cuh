@@ -1,5 +1,6 @@
 #pragma once
 #include <cooperative_groups.h>
+#include <cub/cub.cuh>
 #include "../utils/cuda_utils.cuh"
 #include "device_utils.cuh"
 #include "../defs.cuh"
