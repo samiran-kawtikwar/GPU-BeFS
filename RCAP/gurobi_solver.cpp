@@ -1,12 +1,10 @@
 // Solve RCAP with Gurobi
 
 #include <gurobi_c++.h>
-#include "host_logger.h"
+#include "../utils/logger.cuh"
 #include "stdio.h"
 #include "gurobi_solver.h"
 #include <sstream>
-
-using namespace host_log;
 
 template <typename cost_type, typename weight_type>
 cost_type solve_with_gurobi(cost_type *costs, weight_type *weights, weight_type *budgets, uint N, uint K)
