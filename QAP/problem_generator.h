@@ -16,12 +16,12 @@ problem_info *generate_problem(Config &config, const int seed = 45345)
   size_t user_n = config.user_n;
   double frac = 10;
 
-  problem_info *info = new problem_info(user_n);
+  problem_info *pinfo = new problem_info(user_n);
   cost_type *distances, *flows;
 
   if (config.problemType == generated)
   {
-    info->psize = user_n;
+    pinfo->psize = user_n;
     distances = new cost_type[user_n * user_n];
     flows = new cost_type[user_n * user_n];
     if (user_n > 50)
@@ -52,7 +52,7 @@ problem_info *generate_problem(Config &config, const int seed = 45345)
 
     // solve the problem to get the optimal objective
     Timer t = Timer();
-    info->opt_objective = solve_with_gurobi(distances, flows, user_n);
+    pinfo->opt_objective = solve_with_gurobi(distances, flows, user_n);
     Log(info, "Gurobi solver took %f seconds", t.elapsed());
   }
   else if (config.problemType == qaplib)
@@ -67,13 +67,13 @@ problem_info *generate_problem(Config &config, const int seed = 45345)
     }
     while (infile.is_open() && infile.good())
     {
-      infile >> info->psize;
-      uint n = info->psize;
+      infile >> pinfo->psize;
+      uint n = pinfo->psize;
       config.user_n = n;
 
       distances = new cost_type[n * n];
       flows = new cost_type[n * n];
-      infile >> info->opt_objective;
+      infile >> pinfo->opt_objective;
       int counter = 0;
       cost_type *ptr1 = flows;
       cost_type *ptr2 = distances;
@@ -104,14 +104,14 @@ problem_info *generate_problem(Config &config, const int seed = 45345)
     exit(1);
   }
   // Copy distances and flows to info
-  info->distances = distances;
-  info->flows = flows;
-  if (info->psize > 50)
+  pinfo->distances = distances;
+  pinfo->flows = flows;
+  if (pinfo->psize > 50)
   {
     Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 50");
     exit(-1);
   }
-  return info;
+  return pinfo;
 }
 
 template <typename cost_type = uint>
