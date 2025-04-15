@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <string>
+#include <cuda.h>
+#include <cuda_runtime.h>
 // #define __DEBUG__
 // #define DEBUG_D
 
