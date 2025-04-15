@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include <stdint.h>
-// #define __DEBUG__
+#define __DEBUG__
 
 #ifdef __CUDACC__
 

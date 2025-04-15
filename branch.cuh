@@ -9,6 +9,7 @@
 #include "RCAP/rcap_kernels.cuh"
 
 #include "LAP/Hung_Tlap.cuh"
+#include "QAP/problem_info.h"
 
 namespace cg = cooperative_groups;
 

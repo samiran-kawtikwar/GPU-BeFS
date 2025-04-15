@@ -11,12 +11,12 @@
 #include "defs.cuh"
 #include "LAP/device_utils.cuh"
 #include "LAP/Hung_Tlap.cuh"
-#include "branch.cuh"
+// #include "branch.cuh"
 
-#include "RCAP/config.h"
-#include "RCAP/cost_generator.h"
-#include "RCAP/gurobi_solver.h"
-#include "RCAP/subgrad_solver.cuh"
+#include "QAP/config.h"
+#include "QAP/problem_generator.h"
+#include "QAP/gurobi_solver.h"
+// #include "QAP/qap_functions.cuh"
 
 #include "cudaProfiler.h"
 #include "cuda_profiler_api.h"
@@ -41,11 +41,10 @@ int main(int argc, char **argv)
 {
   Log(info, "Starting program");
   Config config = parseArgs(argc, argv);
-  printConfig(config);
+
   int dev_ = config.deviceId;
   uint psize = config.user_n;
-  uint ncommodities = config.user_ncommodities;
-  if (psize > 100)
+  if (psize > 50)
   {
     Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 100");
     exit(-1);
@@ -54,7 +53,10 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaSetDevice(dev_));
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, dev_);
-  problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
+  problem_info *h_pinfo = generate_problem<cost_type>(config, config.seed);
+  print(h_pinfo, false, false);
+  printConfig(config);
+#if 0
 
   Timer t = Timer();
   // Solve RCAP
@@ -252,4 +254,6 @@ int main(int argc, char **argv)
   // print exit code message and return
   Log(info, "Exit code: %s", ExitCode_text[exit_code]);
   return int(exit_code);
+#endif
+  return 0;
 }
