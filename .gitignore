@@ -5,6 +5,7 @@ debug/**
 scratch/**
 scripts/**
 results/**
+dev/**
 compile.sh
 
 *.txt
@@ -12,3 +13,4 @@ compile.sh
 .prettierrc
 profiling/**
 *.ncu-rep
+*.json
