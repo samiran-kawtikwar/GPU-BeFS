@@ -10,42 +10,14 @@ struct problem_info
   cost_type *flows;
   uint opt_objective;
 
-  problem_info(uint user_n)
+  void allocate()
   {
-    psize = user_n;
+    CUDA_RUNTIME(cudaMallocManaged(&distances, psize * psize * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMallocManaged(&flows, psize * psize * sizeof(cost_type)));
   }
-  ~problem_info()
+  void free()
   {
-    // Free distances pointer
-    if (distances != nullptr)
-    {
-      cudaPointerAttributes attributes;
-      cudaError_t err = cudaPointerGetAttributes(&attributes, distances);
-      // Check if the pointer is a device pointer.
-      if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice)
-      {
-        cudaFree(distances);
-      }
-      else
-      {
-        // If not on device (or error occurred), assume host allocation.
-        delete[] distances;
-      }
-    }
-
-    // Free flows pointer
-    if (flows != nullptr)
-    {
-      cudaPointerAttributes attributes;
-      cudaError_t err = cudaPointerGetAttributes(&attributes, flows);
-      if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice)
-      {
-        cudaFree(flows);
-      }
-      else
-      {
-        delete[] flows;
-      }
-    }
+    CUDA_RUNTIME(cudaFree(distances));
+    CUDA_RUNTIME(cudaFree(flows));
   }
 };

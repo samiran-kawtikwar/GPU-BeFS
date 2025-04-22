@@ -658,11 +658,11 @@ fundef void get_X(TILE tile, PARTITION_HANDLE<data> &ph, int *X)
 
 fundef void set_handles(TILE tile, PARTITION_HANDLE<data> &ph, TILED_HANDLE<data> &th)
 {
-  const uint tile_id = tile.meta_group_rank();
-  const uint worker_id = blockIdx.x * TilesPerBlock + tile_id;
+  const uint worker_id = tile.meta_group_rank();
 
   if (tile.thread_rank() == 0)
   {
+    ph.cost = &th.cost[worker_id * SIZE * SIZE];
     ph.slack = &th.slack[worker_id * SIZE * SIZE];
     ph.column_of_star_at_row = &th.column_of_star_at_row[worker_id * SIZE];
 

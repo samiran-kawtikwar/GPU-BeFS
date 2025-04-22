@@ -1,20 +1,17 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "utils/cuda_utils.cuh"
 #include "memory_manager.cuh"
 #include "request_manager.cuh"
 #include "queue/queue.cuh"
 #include "defs.cuh"
-#include "RCAP/rcap_kernels.cuh"
 
 #include "LAP/Hung_Tlap.cuh"
 #include "QAP/problem_info.h"
-
-namespace cg = cooperative_groups;
+#include "QAP/GLB_solver.cuh"
 
 __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                  node_info *node_space, const problem_info *pinfo,
+                                  node_info *node_space, const problem_info *pinfo, glb_space *glb_space,
                                   queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                   queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
                                   bool *hold_status, const cost_type UB)
@@ -24,108 +21,88 @@ __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail
   {
     uint *my_addresses = work_space[bId].address_space;
     worker_info *my_space = &work_space[bId];
-    __shared__ uint nchild, child_index;
+    __shared__ int *fa, *la; // Ownership: Block
 
     if (threadIdx.x == 0)
     {
-      nchild = 0;
-      child_index = 0;
+      fa = my_space->fixed_assignments;
+      la = glb_space[bId].la;
     }
+
     __syncthreads();
 
-    cg::thread_block block = cg::this_thread_block();
-    cg::thread_block_tile<TileSize> tile = cg::tiled_partition<TileSize>(block);
-    const uint tile_id = tile.meta_group_rank();
-    const uint local_id = tile.thread_rank();
-
+    const uint child_id = bId - 1;
     // get nchildren and their bounds
-    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
+
+    if (threadIdx.x == 0)
     {
-      if (local_id == 0)
-      {
-        my_space->fixed_assignments[psize * child_id + child_id] = 1;
-        my_space->level[child_id] = 1;
-        my_space->LB[child_id] = (float)pinfo->costs[child_id * psize];
-      }
-      sync(tile);
-      if (local_id == 0)
-      {
-        if (my_space->LB[child_id] < UB)
-        {
-          my_space->feasible[child_id] = true;
-          atomicAdd(&nchild, 1);
-        }
-        else
-          my_space->feasible[child_id] = false;
-      }
+      my_space->fixed_assignments[child_id] = 0;
+      my_space->level[0] = 1;
     }
+    __syncthreads();
+    // update bounds
+    glb_solve(glb_space[bId], fa, la, pinfo, my_space->LB[0]);
+    __syncthreads();
+    if (threadIdx.x == 0)
+      my_space->pushable[0] = (my_space->LB[0] <= UB) ? true : false;
     __syncthreads();
 
     // Get nchild addresses
-    get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, nchild,
-               my_addresses);
-
-    // construct a for sending to queue
-    node *a = work_space[bId].nodes;
-    __syncthreads();
-
-    __shared__ node_info *b[TilesPerBlock];
-    for (uint child_id = tile_id; child_id < psize; child_id += TilesPerBlock)
+    if (my_space->pushable[0])
     {
-      if (my_space->feasible[child_id])
+      get_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size, 1, my_addresses);
+
+      // construct a for sending to queue
+      node *a = work_space[bId].nodes;
+      __syncthreads();
+
+      __shared__ node_info *b;
+
+      if (threadIdx.x == 0)
       {
-        if (local_id == 0)
-        {
-          uint my_index = atomicAdd(&child_index, 1);
-          b[tile_id] = &node_space[my_addresses[my_index]];
-          b[tile_id]->LB = my_space->LB[child_id];
-          b[tile_id]->level = my_space->level[child_id];
-          a[my_index].value = b[tile_id];
-          a[my_index].key = my_space->LB[child_id];
-        }
-        sync(tile);
-        // copy fixed assignments
-        for (uint j = local_id; j < psize; j += TileSize)
-          b[tile_id]->fixed_assignments[j] = my_space->fixed_assignments[psize * child_id + j]; // fix row i to column lvl + 1.
-        sync(tile);
+        DLog(debug, "Block %u: child_id %u, LB %u\n", bId, child_id, my_space->LB[0]);
+        b = &node_space[my_addresses[0]];
+        b->LB = my_space->LB[0];
+        b->level = my_space->level[0];
+        a[0].value = b;
+        a[0].key = my_space->LB[0];
       }
+      __syncthreads();
+      // copy fixed assignments
+      for (uint j = threadIdx.x; j < psize; j += blockDim.x)
+        b->fixed_assignments[j] = my_space->fixed_assignments[j]; // fix row i to column lvl + 1.
+      __syncthreads();
+      send_requests(BATCH_PUSH, 1, a,
+                    queue_caller(request_queue, tickets, head, tail),
+                    request_queue_size, queue_space);
     }
-
     __syncthreads();
-    send_requests(BATCH_PUSH, nchild, a,
-                  queue_caller(request_queue, tickets, head, tail),
-                  request_queue_size, queue_space);
-    __syncthreads();
-
     // reset my_space
-    for (uint i = tile_id; i < psize; i += TilesPerBlock)
+    for (uint i = threadIdx.x; i < psize; i += blockDim.x)
     {
-      if (local_id == 0)
-      {
-        my_space->LB[i] = 0;
-        my_space->feasible[i] = false;
-        my_space->level[i] = 0;
-      }
-      for (uint j = local_id; j < psize; j += TileSize)
-        my_space->fixed_assignments[psize * i + j] = 0;
+
+      my_space->LB[i] = 0;
+      my_space->pushable[i] = false;
+      my_space->level[i] = 0;
+      my_space->fixed_assignments[i] = -1;
+      la[i] = -1;
     }
+    __syncthreads();
   }
   else
   {
-    process_requests(1, queue_caller(request_queue, tickets, head, tail), request_queue_size,
+    process_requests(psize, queue_caller(request_queue, tickets, head, tail), request_queue_size,
                      bheap, queue_space);
 
     for (uint i = threadIdx.x; i < request_queue_size; i += blockDim.x)
-    {
       hold_status[i] = false;
-    }
   }
 }
 
 // Add launch bounds
 __launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void branch_n_bound(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                   node_info *node_space, subgrad_space *subgrad_space, const problem_info *pinfo,
+                                   node_info *node_space, glb_space *glb_space, const problem_info *pinfo,
                                    queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
                                    queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
                                    bool *hold_status,
@@ -145,25 +122,20 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
     INIT_TIME(lap_counters);
     START_TIME(INIT);
 
-    __shared__ uint *my_addresses;              // Ownership: Block
-    __shared__ worker_info *my_space;           // Ownership: Block
-    __shared__ int *col_fa[TilesPerBlock];      // Ownership: Tile
-    __shared__ float *lap_costs[TilesPerBlock]; // Ownership: Tile
-    if (local_id == 0)
-    {
-      if (threadIdx.x == 0)
-      {
-        my_addresses = work_space[blockIdx.x].address_space;
-        my_space = &work_space[blockIdx.x];
-      }
-      // Needed for feasibility check
-      col_fa[tile_id] = &subgrad_space->col_fixed_assignments[(blockIdx.x * TilesPerBlock + tile_id) * psize];
-      lap_costs[tile_id] = &subgrad_space->lap_costs[(blockIdx.x * TilesPerBlock + tile_id) * psize * psize]; // subgradient always works with floats
-    }
-    __shared__ PARTITION_HANDLE<float> ph[TilesPerBlock]; // needed for LAP. ownership: Tile
-    __shared__ float UB[TilesPerBlock];                   // needed for subgradient, ownership: Tile
+    __shared__ uint *my_addresses;    // Ownership: Block
+    __shared__ worker_info *my_space; // Ownership: Block
+    __shared__ int *fa, *la;          // Ownership: Block
 
-    set_handles(tile, ph[tile_id], subgrad_space->T.th);
+    if (threadIdx.x == 0)
+    {
+      my_addresses = work_space[blockIdx.x].address_space;
+      my_space = &work_space[blockIdx.x];
+      fa = my_space->fixed_assignments;
+      la = glb_space[blockIdx.x].la;
+    }
+    // Needed for feasibility check
+    __shared__ PARTITION_HANDLE<cost_type> ph[TilesPerBlock]; // needed for LAP. ownership: Tile
+
     __shared__ node popped_node;                           // Ownership: Block
     __shared__ uint popped_index, nchild_feas, lvl, nfail; // Ownership: Block
     __shared__ bool opt_flag, overflow_flag;               // Ownership: Block
@@ -207,40 +179,22 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         popped_index = popped_node.value->id;
         lvl = popped_node.value->level;
       }
-      if (local_id == 0)
-        UB[tile_id] = float(global_UB); // Reset UB
       __syncthreads();
       END_TIME(TRANSFER);
-
-      // start branching to get children
-      __shared__ uint child_id, my_i[TilesPerBlock];
-      if (threadIdx.x == 0)
-      {
-        nfail = 0; // Owned by Block
-        child_id = 0;
-      }
-      __syncthreads();
-      // Check feasibility and update bounds of each child
-      __shared__ node current_node[TilesPerBlock];           // Ownership: Tile
-      __shared__ node_info current_node_info[TilesPerBlock]; // Ownership: Tile
+      __shared__ node_info current_node_info; // Ownership: Block
+      __shared__ node current_node;           // Ownership: Block
       START_TIME(UPDATE_LB);
-      if (local_id == 0)
-        my_i[tile_id] = atomicAdd(&child_id, 1);
-      sync(tile);
-      uint i = my_i[tile_id];
-      while (i < psize - lvl)
+      for (uint i = 0; i < psize - lvl; i++)
       {
         // Get popped_node info in the worker space
-        for (uint j = local_id; j < psize; j += TileSize)
-          my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
-        sync(tile);
+        for (uint j = threadIdx.x; j < psize; j += blockDim.x)
+          fa[j] = popped_node.value->fixed_assignments[j];
+        __syncthreads();
 
-        if (local_id == 0)
+        if (threadIdx.x == 0)
         {
-          if (my_space->fixed_assignments[i * psize + i] == 0)
-          {
-            my_space->fixed_assignments[i * psize + i] = lvl + 1;
-          }
+          if (fa[i] == 0)
+            fa[i] = lvl + 1;
           else
           {
             uint offset = atomicAdd(&nfail, 1);
@@ -248,7 +202,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             uint prog = 0, index = psize - lvl;
             for (uint j = psize - lvl; j < psize; j++)
             {
-              if (my_space->fixed_assignments[i * psize + j] == 0)
+              if (fa[j] == 0)
               {
                 if (prog == offset)
                 {
@@ -258,63 +212,41 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                 prog++;
               }
             }
-            my_space->fixed_assignments[i * psize + index] = lvl + 1;
+            fa[index] = lvl + 1;
           }
           my_space->level[i] = lvl + 1;
-          current_node_info[tile_id] = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
-          current_node[tile_id].value = &current_node_info[tile_id];
+          current_node_info = node_info(my_space->fixed_assignments, 0, lvl + 1);
+          current_node.value = &current_node_info;
         }
-        sync(tile);
-        feas_check(pinfo, tile,
-                   &current_node[tile_id], col_fa[tile_id],
-                   lap_costs[tile_id], stats, my_space->feasible[i],
-                   ph[tile_id]);
+        __syncthreads();
 
-        sync(tile);
-        // update bounds if the child is feasible
-        if (my_space->feasible[i])
+        // update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
+        //                       &current_node, col_fa[tile_id], ph[tile_id]);
+
+        __syncthreads();
+        if (threadIdx.x == 0)
         {
-          update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
-                                &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
-          sync(tile);
+          if (lvl + 1 == psize && current_node.value->LB <= global_UB)
+          {
 
-          if (lvl + 1 == psize && current_node[tile_id].value->LB <= global_UB)
-          {
-            if (local_id == 0)
-            {
-              printf("Optimal solution reached with cost %f\n", popped_node.value->LB);
-              opt_reached.store(true, cuda::memory_order_release);
-            }
+            printf("Optimal solution reached with cost %f\n", current_node.value->LB);
+            opt_reached.store(true, cuda::memory_order_release);
           }
-          else if (current_node[tile_id].value->LB <= global_UB)
+          else if (current_node.value->LB <= global_UB)
           {
-            if (local_id == 0)
-            {
-              atomicAdd(&stats->nodes_explored, 1);
-              atomicAdd(&nchild_feas, 1);
-              my_space->feasible[i] = true;
-              my_space->LB[i] = current_node[tile_id].value->LB;
-            }
+
+            atomicAdd(&stats->nodes_explored, 1);
+            atomicAdd(&nchild_feas, 1);
+            my_space->pushable[i] = true;
+            my_space->LB[i] = current_node.value->LB;
           }
           else
           {
-            if (local_id == 0)
-            {
-              atomicAdd(&stats->nodes_pruned_incumbent, 1);
-              my_space->feasible[i] = false;
-            }
+
+            atomicAdd(&stats->nodes_pruned_incumbent, 1);
+            my_space->pushable[i] = false;
           }
         }
-        else
-        {
-          if (local_id == 0)
-            atomicAdd(&stats->nodes_pruned_infeasible, 1);
-          sync(tile);
-        }
-        if (local_id == 0)
-          my_i[tile_id] = atomicAdd(&child_id, 1);
-        sync(tile);
-        i = my_i[tile_id];
       }
       __syncthreads();
       END_TIME(UPDATE_LB);
@@ -350,7 +282,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           __syncthreads();
           for (uint i = threadIdx.x; i < psize - lvl; i += blockDim.x)
           {
-            if (my_space->feasible[i])
+            if (my_space->pushable[i])
             {
               uint ind = atomicAdd(&index, 1);
               node_info *b = &node_space[my_addresses[ind]];

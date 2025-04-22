@@ -11,8 +11,8 @@ typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
 
-#define BlockSize 64U
-#define TileSize 64U
+#define BlockSize 1024U
+#define TileSize 32U
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
 
@@ -103,9 +103,9 @@ struct queue_info
 struct worker_info
 {
   node nodes[MAX_TOKENS];
-  float LB[MAX_TOKENS];
+  cost_type LB[MAX_TOKENS];
   uint level[MAX_TOKENS];
-  bool feasible[MAX_TOKENS];
+  bool pushable[MAX_TOKENS];
   int *fixed_assignments; // To temporarily store fixed assignments
   uint *address_space;    // To temporarily store dequeued addresses
 
@@ -128,9 +128,9 @@ struct worker_info
   // Function to allocate memory for this instance
   void allocate(size_t psize)
   {
-    CUDA_RUNTIME(cudaMalloc((void **)&fixed_assignments, psize * psize * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&fixed_assignments, psize * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&address_space, psize * sizeof(uint)));
-    CUDA_RUNTIME(cudaMemset(fixed_assignments, 0, psize * psize * sizeof(int)));
+    CUDA_RUNTIME(cudaMemset(fixed_assignments, -1, psize * sizeof(int)));
     CUDA_RUNTIME(cudaMemset(address_space, 0, psize * sizeof(uint)));
   }
   // Function to free allocated memory for this instance
