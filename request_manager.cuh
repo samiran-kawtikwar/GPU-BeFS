@@ -72,7 +72,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
       {
         __syncthreads();
         // if (threadIdx.x == 0)
-        //   printf("Block %u is processing %s request for block %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx);
+        //   DLog(warn, "Block %u is processing %s request for block %u\n", blockIdx.x, getTextForEnum(task_type), dequeued_idx);
         if (threadIdx.x == 0)
           request_status = DONE;
         __syncthreads();
@@ -125,7 +125,7 @@ __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
             queue_space[dequeued_idx].nodes[0] = min;
           queue_space[dequeued_idx].req_status.store(DONE, cuda::memory_order_release);
           atomicAdd(&(count), 1);
-          if (count % 100000 == 0)
+          if (count % 1000000 == 0)
             DLog(debug, "Processed %u requests\n", count);
           if (task_type == POP && hold_status[dequeued_idx] == true)
           {

@@ -11,7 +11,7 @@ typedef unsigned int uint;
 typedef uint cost_type;
 typedef uint weight_type;
 
-#define BlockSize 1024U
+#define BlockSize 512U
 #define TileSize 32U
 #define TilesPerBlock (BlockSize / TileSize)
 #define TILE cg::thread_block_tile<TileSize>
@@ -68,7 +68,7 @@ const char *enum_to_str(TaskType type)
 struct node_info
 {
   int *fixed_assignments;
-  float LB;
+  cost_type LB;
   uint level;
   uint id; // For mapping with memory queue; DON'T UPDATE
   __host__ __device__ node_info() {};
@@ -102,10 +102,10 @@ struct queue_info
 
 struct worker_info
 {
-  node nodes[MAX_TOKENS];
-  cost_type LB[MAX_TOKENS];
-  uint level[MAX_TOKENS];
-  bool pushable[MAX_TOKENS];
+  node *nodes;
+  cost_type *LB;
+  uint *level;
+  bool *pushable;
   int *fixed_assignments; // To temporarily store fixed assignments
   uint *address_space;    // To temporarily store dequeued addresses
 
@@ -128,8 +128,16 @@ struct worker_info
   // Function to allocate memory for this instance
   void allocate(size_t psize)
   {
-    CUDA_RUNTIME(cudaMalloc((void **)&fixed_assignments, psize * sizeof(int)));
+    CUDA_RUNTIME(cudaMalloc((void **)&nodes, psize * sizeof(node)));
+    CUDA_RUNTIME(cudaMalloc((void **)&LB, psize * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMalloc((void **)&level, psize * sizeof(uint)));
+    CUDA_RUNTIME(cudaMalloc((void **)&pushable, psize * sizeof(bool)));
+    CUDA_RUNTIME(cudaMalloc((void **)&fixed_assignments, psize * psize * sizeof(int)));
     CUDA_RUNTIME(cudaMalloc((void **)&address_space, psize * sizeof(uint)));
+
+    CUDA_RUNTIME(cudaMemset(LB, 0, psize * sizeof(cost_type)));
+    CUDA_RUNTIME(cudaMemset(level, 0, psize * sizeof(uint)));
+    CUDA_RUNTIME(cudaMemset(pushable, false, psize * sizeof(bool)));
     CUDA_RUNTIME(cudaMemset(fixed_assignments, -1, psize * sizeof(int)));
     CUDA_RUNTIME(cudaMemset(address_space, 0, psize * sizeof(uint)));
   }

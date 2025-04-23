@@ -41,6 +41,25 @@ struct glb_space
   }
 };
 
+__device__ __forceinline__ void print_matrix(const cost_type *matrix, uint N)
+{
+  if (threadIdx.x == 0)
+  {
+    DLog(info, "Z matrix: \n");
+    for (uint i = 0; i < N; i++)
+    {
+      for (uint j = 0; j < N; j++)
+      {
+        if (matrix[i * N + j] == cost_type(MAX_DATA))
+          printf("M ");
+        else
+          printf("%u ", matrix[i * N + j]);
+      }
+      printf("\n");
+    }
+  }
+}
+
 // Called by a single tile (partition)
 __device__ __forceinline__ void populate_costs(cg::thread_block_tile<TileSize> tile, const int *fa, const int *la,
                                                const uint i, const uint k,
@@ -73,7 +92,7 @@ __device__ __forceinline__ void populate_costs(cg::thread_block_tile<TileSize> t
   }
 }
 
-__device__ void glb_getZ(TILE tile, glb_space &glb_space, int *fa, int *la, const problem_info *pinfo)
+__device__ void glb_getZ(TILE tile, glb_space &glb_space, const int *fa, const int *la, const problem_info *pinfo)
 {
   const uint psize = pinfo->psize;
   const cost_type *flows = pinfo->flows;
@@ -94,19 +113,19 @@ __device__ void glb_getZ(TILE tile, glb_space &glb_space, int *fa, int *la, cons
       get_objective(tile, ph[tId]);
       sync(tile);
       if (tile.thread_rank() == 0)
-        glb_space.z[tileId] = ph[tId].objective[0];
+        glb_space.z[i * psize + k] = ph[tId].objective[0];
     }
     else
     {
       if (tile.thread_rank() == 0)
-        glb_space.z[tileId] = (cost_type)MAX_DATA;
+        glb_space.z[i * psize + k] = (cost_type)MAX_DATA;
     }
     sync(tile);
   }
 }
 
 // Called by a single thread block
-__device__ void glb_solve(glb_space &glb_space, int *fa, int *la,
+__device__ void glb_solve(glb_space &glb_space, const int *fa, int *la,
                           const problem_info *pinfo, cost_type &LB)
 {
   const uint psize = pinfo->psize;
@@ -119,13 +138,29 @@ __device__ void glb_solve(glb_space &glb_space, int *fa, int *la,
       la[fa[i]] = i;
   }
   __syncthreads();
+  // if (threadIdx.x == 0)
+  // {
+  //   printf("new fa: ");
+  //   for (uint j = 0; j < psize; j++)
+  //     printf("%d ", fa[j]);
+  //   printf("\n");
+  //   printf("la: ");
+  //   for (uint j = 0; j < psize; j++)
+  //     printf("%d ", la[j]);
+  //   printf("\n");
+  // }
+  // __syncthreads();
+
   glb_getZ(tile, glb_space, fa, la, pinfo);
   __syncthreads();
+  // print Z
+  // print_matrix(glb_space.z, psize);
+  // __syncthreads();
   // Found z, now find LB with BHA
   __shared__ PARTITION_HANDLE<cost_type> bha_handle;
+  set_handles(tile, bha_handle, glb_space.tlap.th);
   if (tile.meta_group_rank() == 0)
   {
-    set_handles(tile, bha_handle, glb_space.tlap.th);
     if (tile.thread_rank() == 0)
       bha_handle.cost = glb_space.z; // bypass the cost matrix
     sync(tile);
@@ -136,5 +171,9 @@ __device__ void glb_solve(glb_space &glb_space, int *fa, int *la,
   __syncthreads();
   if (threadIdx.x == 0)
     LB = bha_handle.objective[0];
+  // reset la
+  for (uint i = threadIdx.x; i < psize; i += blockDim.x)
+    la[i] = -1;
+  __syncthreads();
   return;
 }

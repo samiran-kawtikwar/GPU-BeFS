@@ -4,6 +4,7 @@
 #include "device_utils.cuh"
 #include "../defs.cuh"
 namespace cg = cooperative_groups;
+#define WARP_SIZE 32
 
 #ifdef TIMER
 #include "profile_utils.cuh"
@@ -27,8 +28,6 @@ __constant__ size_t SIZE;
 __constant__ uint NPROB;
 __constant__ size_t nrows;
 __constant__ size_t ncols;
-
-#define WARP_SIZE 32
 
 #if TileSize <= WARP_SIZE
 template <typename Op>

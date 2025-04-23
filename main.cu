@@ -66,15 +66,16 @@ int main(int argc, char **argv)
   // Find max concurrent blocks for the branch_n_bound kernel
 
   int nw1, nb1;
-  cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, empty_memory_queue, 0, 0);
+  cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   Log(info, "Max potential block size: %d", nb1);
   Log(info, "Max potential grid size: %d", nw1);
 
   assert(nb1 >= BlockSize);
   int nworkers; // equals grid dimension of request manager
-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, empty_memory_queue, BlockSize, 0);
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
   Log(debug, "Max concurrent blocks per SM: %d", nworkers);
   nworkers *= deviceProp.multiProcessorCount;
+  // nworkers = 2;
   assert(nw1 >= nworkers);
 
   // Create space for bound computation storing and branching
@@ -111,7 +112,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaMemGetInfo(&free, &total));
   Log(info, "Occupied memory: %.3f%%", ((total - free) * 1.0) / total * 100);
   size_t memory_queue_weight = (sizeof(node_info) + sizeof(node) + psize * sizeof(int) + sizeof(queue_type) + sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>));
-  size_t memory_queue_len = (free * 0.05) / memory_queue_weight; // Keeping 5% headroom
+  size_t memory_queue_len = (free * 0.95) / memory_queue_weight; // Keeping 5% headroom
   Log(info, "Memory queue length: %lu", memory_queue_len);
 
   // Create space for node_info
@@ -163,45 +164,43 @@ int main(int argc, char **argv)
 
   Log(warn, "TileSize: %u", TileSize);
   // Frist kernel to create L1 nodes
-  execKernel(initial_branching, psize + 1, BlockSize, dev_, true,
+  execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, pinfo, d_glb_space,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
-  // cuProfilerStart();
-  // execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
-  //            queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-  //            d_node_space, d_glb_space, pinfo,
-  //            queue_caller(request_queue, tickets, head, tail), nworkers,
-  //            d_queue_space, d_worker_space, d_bheap,
-  //            d_hold_status,
-  //            UB, stats);
-  // cuProfilerStop();
+
+  cuProfilerStart();
+  execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
+             queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
+             d_node_space, d_glb_space, pinfo,
+             queue_caller(request_queue, tickets, head, tail), nworkers,
+             d_queue_space, d_worker_space, d_bheap,
+             d_hold_status,
+             UB, stats);
+  cuProfilerStop();
   printf("\n");
 
-#if 0
 #ifdef TIMER
-    printCounters(counters, false);
-    // printCounters(lap_counters, false);
-    freeCounters(counters);
-    freeCounters(lap_counters);
+  printCounters(counters, false);
+  // printCounters(lap_counters, false);
+  freeCounters(counters);
+  freeCounters(lap_counters);
 #endif
 
-    // Get exit code
-    ExitCode exit_code, *d_exit_code;
-    CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));
-    execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
-    CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
-    CUDA_RUNTIME(cudaFree(d_exit_code));
+  // Get exit code
+  ExitCode exit_code, *d_exit_code;
+  CUDA_RUNTIME(cudaMalloc((void **)&d_exit_code, sizeof(ExitCode)));
+  execKernel(get_exit_code, 1, 1, dev_, false, d_exit_code);
+  CUDA_RUNTIME(cudaMemcpy(&exit_code, d_exit_code, sizeof(ExitCode), cudaMemcpyDeviceToHost));
+  CUDA_RUNTIME(cudaFree(d_exit_code));
 
-    d_bheap.print_size();
-    Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
-    Log(info, "Nodes Explored: %u, Incumbent: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
-    Log(info, "Total time taken: %f sec", t.elapsed());
+  d_bheap.print_size();
+  Log(info, "Max heap size during execution: %lu", d_bheap.d_max_size[0]);
+  Log(info, "Nodes Explored: %u, Incumbent: %u, Infeasible: %u", stats->nodes_explored, stats->nodes_pruned_incumbent, stats->nodes_pruned_infeasible);
+  Log(info, "Total time taken: %f sec", t.elapsed());
 
-#endif
-  d_bheap.print();
   // Free device memory
   d_bheap.free_memory();
   CUDA_RUNTIME(cudaFree(d_queue_space));
