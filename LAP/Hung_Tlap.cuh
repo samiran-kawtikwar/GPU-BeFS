@@ -47,7 +47,7 @@ public:
     CUDA_RUNTIME(cudaMemcpyToSymbol(ncols, &h_ncols, sizeof(SIZE)));
 
     maxtile = nproblem;
-    // Log(debug, "Allocating memory for %d problems", maxtile);
+    // Log(debug, "Allocating memory for %d LAPs", maxtile);
 
     // external memory
     CUDA_RUNTIME(cudaMalloc((void **)&th.cost, maxtile * size * size * sizeof(cost_type)));

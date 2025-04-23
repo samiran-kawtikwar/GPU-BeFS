@@ -9,7 +9,7 @@ namespace cg = cooperative_groups;
 #include "profile_utils.cuh"
 #endif
 
-#define fundef template <typename data = float> \
+#define fundef template <typename data = uint> \
 __forceinline__ __device__
 
 __device__ __forceinline__ void sync(TILE tile)

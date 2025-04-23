@@ -56,13 +56,13 @@ std::ifstream download_instance(const std::string &instance_name)
 template <typename cost_type = uint>
 problem_info *generate_problem(Config &config, problem_info *pinfo, const int seed = 45345)
 {
-  size_t user_n = config.user_n;
   double frac = 10;
 
   cost_type *distances, *flows;
 
   if (config.problemType == generated)
   {
+    size_t user_n = config.user_n;
     pinfo->psize = user_n;
     distances = new cost_type[user_n * user_n];
     flows = new cost_type[user_n * user_n];
@@ -144,8 +144,9 @@ problem_info *generate_problem(Config &config, problem_info *pinfo, const int se
   }
   // Copy distances and flows to info
   pinfo->allocate();
-  CUDA_RUNTIME(cudaMemcpy(pinfo->distances, distances, user_n * user_n * sizeof(cost_type), cudaMemcpyHostToDevice));
-  CUDA_RUNTIME(cudaMemcpy(pinfo->flows, flows, user_n * user_n * sizeof(cost_type), cudaMemcpyHostToDevice));
+  uint n = pinfo->psize;
+  CUDA_RUNTIME(cudaMemcpy(pinfo->distances, distances, n * n * sizeof(cost_type), cudaMemcpyHostToDevice));
+  CUDA_RUNTIME(cudaMemcpy(pinfo->flows, flows, n * n * sizeof(cost_type), cudaMemcpyHostToDevice));
   delete[] distances;
   delete[] flows;
   if (pinfo->psize > 50)
