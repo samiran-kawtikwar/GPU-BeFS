@@ -180,7 +180,7 @@ int main(int argc, char **argv)
              d_hold_status,
              UB, stats);
   cuProfilerStop();
-  printf("\n");
+  Log(warn, "BnB Terminated\n");
 
 #ifdef TIMER
   printCounters(counters, false);

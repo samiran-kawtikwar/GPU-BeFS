@@ -166,13 +166,15 @@ __device__ void glb_solve(glb_space &glb_space, const int *fa, int *la,
   //   printf("\n");
   // }
   // __syncthreads();
-
+  START_TIME(GET_Z);
   glb_getZ(tile, glb_space, fa, la, pinfo);
   __syncthreads();
+  END_TIME(GET_Z);
   // print Z
   // print_matrix(glb_space.z, psize);
   // __syncthreads();
   // Found z, now find LB with BHA
+  START_TIME(SOLVE_Z);
   __shared__ PARTITION_HANDLE<cost_type> bha_handle;
   set_handles(tile, bha_handle, glb_space.tlap.th);
   if (tile.meta_group_rank() == 0)
@@ -185,6 +187,7 @@ __device__ void glb_solve(glb_space &glb_space, const int *fa, int *la,
     get_objective(tile, bha_handle);
   }
   __syncthreads();
+  END_TIME(SOLVE_Z);
   if (threadIdx.x == 0)
     LB = bha_handle.objective[0];
   // reset la

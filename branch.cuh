@@ -161,10 +161,10 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       }
       __syncthreads();
       END_TIME(TRANSFER);
-      START_TIME(UPDATE_LB);
       // iterate over all children
       for (uint i = 0; i < psize - lvl; i++)
       {
+        START_TIME(BRANCH);
         if (threadIdx.x == 0)
           fa = &my_space->fixed_assignments[i * psize];
         // Get popped_node info in the worker space
@@ -193,10 +193,12 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           my_space->level[i] = lvl + 1;
         }
         __syncthreads();
-
+        END_TIME(BRANCH);
+        START_TIME(UPDATE_LB);
         glb_solve(glb_space[blockIdx.x], fa, la, pinfo, my_space->LB[i]);
-
         __syncthreads();
+        END_TIME(UPDATE_LB);
+        START_TIME(BRANCH);
         if (threadIdx.x == 0)
         {
           // DLog(info, "Processed node \t");
@@ -219,9 +221,10 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           }
         }
         __syncthreads();
+        END_TIME(BRANCH);
       }
       __syncthreads();
-      END_TIME(UPDATE_LB);
+
       START_TIME(QUEUING);
       // free the popped node from node space
       free_memory(queue_caller(memory_queue, tickets, head, tail), memory_queue_size,
