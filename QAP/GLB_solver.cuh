@@ -99,11 +99,27 @@ __device__ void glb_getZ(TILE tile, glb_space &glb_space, const int *fa, const i
   const cost_type *distances = pinfo->distances;
   const uint tId = tile.meta_group_rank();
   __shared__ PARTITION_HANDLE<cost_type> ph[TilesPerBlock];
+  __shared__ uint global_id, tile_id[TilesPerBlock];
   set_handles(tile, ph[tId], glb_space.tlap.th);
 
-  for (uint tileId = tId; tileId < psize * psize; tileId += TilesPerBlock)
+  if (tile.thread_rank() == 0)
   {
-    const uint i = tileId / psize, k = tileId % psize;
+    tile_id[tId] = 0;
+    if (threadIdx.x == 0)
+      global_id = 0;
+  }
+  __syncthreads();
+  while (global_id < psize * psize)
+  {
+    if (tile.thread_rank() == 0)
+    {
+      tile_id[tId] = atomicAdd(&global_id, 1);
+    }
+    sync(tile);
+    if (tile_id[tId] >= psize * psize)
+      break;
+    sync(tile);
+    const uint i = tile_id[tId] / psize, k = tile_id[tId] % psize;
     if ((fa[i] == -1 && la[k] == -1) || (fa[i] > -1 && la[k] == i))
     {
       populate_costs(tile, fa, la, i, k, psize, flows, distances, ph[tId].cost);

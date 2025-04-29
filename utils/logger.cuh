@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 #include <stdint.h>
-#define __DEBUG__
+// #define __DEBUG__
 
 #ifdef __CUDACC__
 
@@ -142,15 +142,13 @@ void printHostMatrix(const cost_type *matrix, size_t nrows, size_t ncols, std::s
 template <typename... Args>
 __device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... args)
 {
-
+#ifdef __DEBUG__
   bool print = true;
   static int logging_flag = int(false);
-#ifndef __DEBUG__
   if (l == debug)
   {
     print = false;
   }
-#endif // __DEBUG__
 
   if (print)
   {
@@ -175,6 +173,7 @@ __device__ __forceinline__ void DLog(LogPriorityEnum l, const char *f, Args... a
       }
     } while (ns = logger::my_sleep(ns));
   }
+#endif // __DEBUG__
 }
 
 template <typename cost_type = int>
