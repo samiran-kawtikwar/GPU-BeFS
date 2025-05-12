@@ -53,7 +53,6 @@ int main(int argc, char **argv)
   // Solve RCAP
   cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
-  // print time
   Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
   // print(h_problem_info, true, true, false);
 
