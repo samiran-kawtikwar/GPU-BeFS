@@ -162,7 +162,7 @@ int main(int argc, char **argv)
              d_hold_status,
              UB, stats);
   cuProfilerStop();
-  Log(warn, "BnB Terminated\n");
+  Log(warn, "BnB Terminated");
 
 #ifdef TIMER
   printCounters(counters, false);
