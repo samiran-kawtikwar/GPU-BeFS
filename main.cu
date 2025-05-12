@@ -30,13 +30,6 @@ __global__ void get_exit_code(ExitCode *ec)
                                                             : ExitCode::UNKNOWN_ERROR;
 }
 
-__global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assignment_space, const uint size, const uint len)
-{
-  size_t g_tid = blockIdx.x * blockDim.x + threadIdx.x;
-  for (size_t i = g_tid; i < len; i += gridDim.x * blockDim.x)
-    nodes[i].fixed_assignments = &fixed_assignment_space[i * size];
-}
-
 int main(int argc, char **argv)
 {
   Log(info, "Starting program");
