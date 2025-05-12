@@ -1,7 +1,6 @@
 #pragma once
-#include "../defs.cuh"
-#include "../utils/logger.cuh"
-#include "../utils/timer.h"
+#include "../config.h"
+#include "../../utils/logger.cuh"
 #include "block_lap_kernels.cuh"
 
 template <typename cost_type = float>

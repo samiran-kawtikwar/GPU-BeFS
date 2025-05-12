@@ -6,7 +6,7 @@
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
 #define MAX_ITER 100
-// #define TIMER
+#define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
 
@@ -104,7 +104,7 @@ struct bnb_stats
 
 #ifdef TIMER
 #include "utils/profile_utils.cuh"
-#include "LAP/profile_utils.cuh"
+#include "RCAP/LAP/profile_utils.cuh"
 #define INIT_TIME(counters) initializeCounters(&counters[blockIdx.x]);
 
 #define START_TIME(countername)                                                       \

@@ -1,8 +1,7 @@
 #pragma once
 #include <cooperative_groups.h>
-#include "../utils/cuda_utils.cuh"
 #include "device_utils.cuh"
-#include "../defs.cuh"
+
 namespace cg = cooperative_groups;
 
 #ifdef TIMER

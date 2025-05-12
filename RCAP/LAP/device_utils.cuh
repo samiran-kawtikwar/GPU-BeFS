@@ -1,5 +1,5 @@
 #pragma once
-#include "../utils/cuda_utils.cuh"
+#include "../../utils/cuda_utils.cuh"
 
 #define MAX_DATA float(1e6)
 typedef unsigned long long int uint64;

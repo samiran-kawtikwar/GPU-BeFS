@@ -8,7 +8,7 @@
 #include "defs.cuh"
 #include "RCAP/rcap_kernels.cuh"
 #include "RCAP/problem_info.h"
-#include "LAP/Hung_Tlap.cuh"
+#include "RCAP/LAP/Hung_Tlap.cuh"
 
 namespace cg = cooperative_groups;
 

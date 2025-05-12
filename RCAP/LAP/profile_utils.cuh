@@ -1,6 +1,6 @@
 #pragma once
-#include "../defs.cuh"
-#include "../utils/cuda_utils.cuh"
+#include "../enums.cuh"
+#include "../../utils/cuda_utils.cuh"
 
 struct LAPCounters
 {
@@ -45,12 +45,14 @@ static __device__ void endTime(LAPCounterName counterName, LAPCounters *counters
   __syncthreads();
 }
 
-__host__ void allocateCounters(LAPCounters** counters, const uint nworkers){
+__host__ void allocateCounters(LAPCounters **counters, const uint nworkers)
+{
   CUDA_RUNTIME(cudaMallocManaged(counters, nworkers * sizeof(LAPCounters)));
   CUDA_RUNTIME(cudaDeviceSynchronize());
 }
 
-__host__ void freeCounters(LAPCounters* counters){
+__host__ void freeCounters(LAPCounters *counters)
+{
   CUDA_RUNTIME(cudaFree(counters));
 }
 

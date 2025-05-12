@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include "../utils/cuda_utils.cuh"
 
 struct problem_info
 {

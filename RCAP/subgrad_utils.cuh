@@ -5,7 +5,7 @@
 #include "gurobi_solver.h"
 #include <sstream>
 
-#include "../LAP/Hung_Tlap.cuh"
+#include "LAP/Hung_Tlap.cuh"
 #include "problem_info.h"
 
 __device__ __forceinline__ void init(TILE tile, float *mult, float *g, float *LB,
