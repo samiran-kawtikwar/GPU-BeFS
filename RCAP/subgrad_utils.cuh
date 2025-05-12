@@ -1,12 +1,13 @@
 #pragma once
 
-#include "../utils/logger.cuh"
-#include "stdio.h"
-#include "gurobi_solver.h"
 #include <sstream>
+#include <cub/cub.cuh>
+#include <stdio.h>
 
+#include "../utils/logger.cuh"
 #include "LAP/Hung_Tlap.cuh"
 #include "problem_info.h"
+#include "gurobi_solver.h"
 
 __device__ __forceinline__ void init(TILE tile, float *mult, float *g, float *LB,
                                      bool &restart, bool &terminate, float &lrate, uint &t,

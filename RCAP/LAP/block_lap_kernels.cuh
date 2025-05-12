@@ -1,5 +1,6 @@
 #pragma once
 #include <cooperative_groups.h>
+#include <cub/cub.cuh>
 #include "device_utils.cuh"
 
 namespace cg = cooperative_groups;
