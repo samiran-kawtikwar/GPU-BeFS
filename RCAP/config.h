@@ -4,6 +4,8 @@
 #include <unistd.h>
 
 typedef unsigned int uint;
+typedef uint cost_type;
+typedef uint weight_type;
 
 struct Config
 {

@@ -6,6 +6,7 @@
 #include <cuda_runtime_api.h>
 #include "../defs.cuh"
 #include "subgrad_solver.cuh"
+#include "problem_info.h"
 
 __device__ __forceinline__ void feas_check_naive(const problem_info *pinfo, const node *a, int *col_fa,
                                                  float *lap_costs, bnb_stats *stats, bool &feasible)

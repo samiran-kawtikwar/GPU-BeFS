@@ -1,6 +1,7 @@
 #pragma once
 #include "queue/queue.cuh"
-#include "enums.cuh"
+#include "RCAP/enums.cuh"
+#include "RCAP/config.h"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
@@ -8,9 +9,6 @@
 // #define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
-typedef unsigned int uint;
-typedef uint cost_type;
-typedef uint weight_type;
 
 #define BlockSize 64U
 #define TileSize 64U
@@ -18,21 +16,6 @@ typedef uint weight_type;
 #define TILE cg::thread_block_tile<TileSize>
 
 uint GRID_DIM_X;
-
-struct problem_info
-{
-  uint psize, ncommodities;
-  cost_type *costs;     // cost of assigning
-  weight_type *weights; // weight of each commodity
-  weight_type *budgets; // capacity of each commodity
-
-  ~problem_info()
-  {
-    CUDA_RUNTIME(cudaFree(costs));
-    CUDA_RUNTIME(cudaFree(weights));
-    CUDA_RUNTIME(cudaFree(budgets));
-  }
-};
 
 struct node_info
 {

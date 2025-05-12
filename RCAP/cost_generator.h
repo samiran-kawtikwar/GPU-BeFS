@@ -9,6 +9,7 @@
 #include "../utils/logger.cuh"
 #include "../utils/cuda_utils.cuh"
 #include "../defs.cuh"
+#include "problem_info.h"
 
 using namespace std;
 
