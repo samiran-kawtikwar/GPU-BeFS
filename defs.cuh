@@ -60,40 +60,6 @@ struct d_instruction
   __host__ __device__ d_instruction(TaskType req_type, size_t req_len, node *nodes) { type = req_type, num_values = req_len, values = nodes; };
 };
 
-struct queue_info
-{
-  TaskType type;
-  node nodes[MAX_TOKENS];
-  uint batch_size;                                              // For batch push
-  cuda::atomic<uint32_t, cuda::thread_scope_device> req_status; // 0 done 1 pending 2 invalid
-  uint id;                                                      // For mapping with request queue; DON'T UPDATE
-
-  // Device-side allocation
-  static void allocate_all(queue_info *&d_queue_space, size_t nworkers)
-  {
-    CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
-
-    // Temporary host-side initialization
-    queue_info *h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
-    memset(h_queue_space, 0, nworkers * sizeof(queue_info));
-
-    for (size_t i = 0; i < nworkers; i++)
-    {
-      h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
-      h_queue_space[i].batch_size = 0;
-      h_queue_space[i].id = static_cast<uint32_t>(i);
-    }
-
-    CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
-    free(h_queue_space);
-  }
-
-  static void free_all(queue_info *d_queue_space)
-  {
-    CUDA_RUNTIME(cudaFree(d_queue_space));
-  }
-};
-
 struct worker_info
 {
   node nodes[MAX_TOKENS];
