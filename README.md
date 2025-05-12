@@ -2,12 +2,12 @@
 
 A GPU-Accelerated framework for performing Branch and Bound Search on GPUs with Best First Search (BeFS) order. This project is part of the research paper "A framework for GPU-Accelerated Branch-And-Bound with Best First Search" by Samiran Kawtikwar, Izzat El Hajj, and Rakesh Nagi. [DOI Pending]
 
-## Description
+### Description
 
 This repository contains the implementation of a GPU-accelerated framework for performing Branch and Bound Search on GPUs with Best First Search (BeFS) order. The framework is designed to efficiently solve combinatorial optimization problems using the Branch and Bound algorithm, leveraging the parallel processing capabilities of modern GPUs.
 The framework is implemented in C++ and CUDA, and it provides a flexible and extensible architecture for solving various combinatorial optimization problems. The code is organized into several modules, each responsible for a specific aspect of the Branch and Bound algorithm.
 
-## Features
+### Features
 
 - GPU-accelerated Branch and Bound framework (extensible to discrete optimization problems, user would have to implement problem-specific branching and bounding functions)
 - Best First Search (BeFS) order for efficient exploration of the search space
@@ -22,7 +22,7 @@ The framework is implemented in C++ and CUDA, and it provides a flexible and ext
 - NVIDIA GPU with SM version 8.0 or higher (e.g. NVIDIA Ampere series or later, RTX30+ series)
 - OS: Any recent linux (e.g. Ubuntu 22+, SLES 15+, RHEL 8+)
 
-## Libraries used
+### Libraries used
 
 - OMP (Open Multi-Processing) for multi-threading
 - Gurobi (optional, for getting tight upper bounds)
@@ -39,7 +39,7 @@ The framework is implemented in C++ and CUDA, and it provides a flexible and ext
 5. Compile the code using the 'make all' command
 6. Refer to example section for running the code
 
-## Configurations
+### Configurations
 
 The framework is designed to be flexible and extensible, allowing users to configure various aspects of the Branch and Bound algorithm. The following configurations are available: (P.S. the framework only supports 1 dimensional thread blocks and grids)
 
