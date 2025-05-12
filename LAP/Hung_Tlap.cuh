@@ -3,8 +3,6 @@
 #include "../utils/logger.cuh"
 #include "../utils/timer.h"
 #include "block_lap_kernels.cuh"
-#include <thrust/reduce.h>
-#include <thrust/execution_policy.h>
 
 template <typename cost_type = float>
 class TLAP
