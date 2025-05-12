@@ -1,5 +1,6 @@
 #pragma once
 #include "queue/queue.cuh"
+#include "enums.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
@@ -17,53 +18,6 @@ typedef uint weight_type;
 #define TILE cg::thread_block_tile<TileSize>
 
 uint GRID_DIM_X;
-
-enum TaskType
-{
-  PUSH = 0,
-  POP,
-  BATCH_PUSH,
-  TOP
-};
-
-enum ExitCode
-{
-  OPTIMAL = 0,
-  HEAP_FULL,
-  INFEASIBLE,
-  UNKNOWN_ERROR
-};
-
-const char *ExitCode_text[] = {
-    "OPTIMAL",
-    "HEAP_FULL",
-    "INFEASIBLE",
-    "UNKNOWN_ERROR"};
-
-__device__ __forceinline__ const char *
-getTextForEnum(int enumVal)
-{
-  return (const char *[]){
-      "PUSH",
-      "POP",
-      "BATCH_PUSH",
-      "TOP",
-  }[enumVal];
-}
-
-const char *enum_to_str(TaskType type)
-{
-  if (type == PUSH)
-    return "push";
-  else if (type == POP)
-    return "pop";
-  else if (type == BATCH_PUSH)
-    return "batch_push";
-  else if (type == TOP)
-    return "top";
-  else
-    return "unknown";
-};
 
 struct problem_info
 {
@@ -113,6 +67,31 @@ struct queue_info
   uint batch_size;                                              // For batch push
   cuda::atomic<uint32_t, cuda::thread_scope_device> req_status; // 0 done 1 pending 2 invalid
   uint id;                                                      // For mapping with request queue; DON'T UPDATE
+
+  // Device-side allocation
+  static void allocate_all(queue_info *&d_queue_space, size_t nworkers)
+  {
+    CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
+
+    // Temporary host-side initialization
+    queue_info *h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
+    memset(h_queue_space, 0, nworkers * sizeof(queue_info));
+
+    for (size_t i = 0; i < nworkers; i++)
+    {
+      h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
+      h_queue_space[i].batch_size = 0;
+      h_queue_space[i].id = static_cast<uint32_t>(i);
+    }
+
+    CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
+    free(h_queue_space);
+  }
+
+  static void free_all(queue_info *d_queue_space)
+  {
+    CUDA_RUNTIME(cudaFree(d_queue_space));
+  }
 };
 
 struct worker_info
@@ -124,8 +103,9 @@ struct worker_info
   int *fixed_assignments; // To temporarily store fixed assignments
   uint *address_space;    // To temporarily store dequeued addresses
 
-  static void allocate_all(worker_info *d_worker_space, size_t nworkers, size_t psize)
+  static void allocate_all(worker_info *&d_worker_space, size_t nworkers, size_t psize)
   {
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
     for (size_t i = 0; i < nworkers; i++)
     {
       d_worker_space[i].allocate(psize);
@@ -139,6 +119,7 @@ struct worker_info
     {
       d_worker_space[i].free();
     }
+    CUDA_RUNTIME(cudaFree(d_worker_space));
   }
   // Function to allocate memory for this instance
   void allocate(size_t psize)
@@ -171,61 +152,6 @@ struct bnb_stats
     nodes_pruned_infeasible = 0;
   }
 };
-
-enum CounterName
-{
-  INIT = 0,
-  QUEUING,
-  WAITING,
-  WAITING_UNDERFLOW,
-  TRANSFER,
-  // FEAS_CHECK,
-  UPDATE_LB,
-  // SOLVE_LAP_FEAS,
-  // SOLVE_LAP_SUBGRAD,
-  // BRANCH,
-  NUM_COUNTERS
-};
-
-enum LAPCounterName
-{
-  STEP1 = static_cast<int>(NUM_COUNTERS),
-  STEP2,
-  STEP3,
-  STEP4,
-  STEP5,
-  STEP6,
-  NUM_LAP_COUNTERS
-};
-
-enum RequestStatus
-{
-  DONE = 0,
-  PROCESSING,
-  INVALID
-};
-
-const char *CounterName_text[] = {
-    "INIT",
-    "QUEUING",
-    "WAITING",
-    "WAITING_UNDERFLOW",
-    "TRANSFER",
-    // "FEAS_CHECK",
-    "UPDATE_LB",
-    // "SOLVE_LAP_FEAS",
-    // "SOLVE_LAP_SUBGRAD",
-    // "BRANCH",
-    "NUM_COUNTERS"};
-
-const char *LAPCounterName_text[] = {
-    "STEP1",
-    "STEP2",
-    "STEP3",
-    "STEP4",
-    "STEP5",
-    "STEP6",
-    "NUM_LAP_COUNTERS"};
 
 #ifdef TIMER
 #include "utils/profile_utils.cuh"

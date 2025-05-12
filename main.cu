@@ -49,7 +49,7 @@ int main(int argc, char **argv)
   cudaGetDeviceProperties(&deviceProp, dev_);
   problem_info *pinfo = generate_problem<cost_type>(config, config.seed);
 
-  // Solve RCAP
+  // Solve RCAP for getting UB (Can be taken from a library if not interesting in using gurobi)
   Timer t = Timer();
   cost_type UB = solve_with_gurobi<cost_type, weight_type>(pinfo->costs, pinfo->weights, pinfo->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
@@ -81,8 +81,7 @@ int main(int argc, char **argv)
 
   // Create space for bound computation storing and branching
   Log(debug, "Creating scratch space for workers");
-  worker_info *d_worker_space; // managed by each worker
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
+  worker_info *d_worker_space = nullptr; // managed by each worker
   worker_info::allocate_all(d_worker_space, nworkers, psize);
 
   Log(debug, "Creating space for subgrad solver");
@@ -95,18 +94,9 @@ int main(int argc, char **argv)
   // printf("Exiting...\n");
   // exit(0);
 
-  queue_info *d_queue_space, *h_queue_space; // Queue is managed by workers
-  CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
-  h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
-  memset(h_queue_space, 0, nworkers * sizeof(queue_info));
-  for (size_t i = 0; i < nworkers; i++)
-  {
-    h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
-    h_queue_space[i].batch_size = 0;
-    h_queue_space[i].id = (uint32_t)i;
-  }
-  CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
-  delete[] h_queue_space;
+  Log(debug, "Creating space for request queue");
+  queue_info *d_queue_space = nullptr;
+  queue_info::allocate_all(d_queue_space, nworkers);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
@@ -207,13 +197,12 @@ int main(int argc, char **argv)
 
   // Free device memory
   d_bheap.free_memory();
-  CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
   CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
   CUDA_RUNTIME(cudaFree(d_hold_status));
   worker_info::free_all(d_worker_space, nworkers);
-  CUDA_RUNTIME(cudaFree(d_worker_space));
+  queue_info::free_all(d_queue_space);
   d_subgrad_space->clear();
   CUDA_RUNTIME(cudaFree(d_subgrad_space));
   CUDA_RUNTIME(cudaFree(pinfo));
