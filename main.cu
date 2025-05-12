@@ -30,13 +30,6 @@ __global__ void get_exit_code(ExitCode *ec)
                                                             : ExitCode::UNKNOWN_ERROR;
 }
 
-__global__ void set_fixed_assignment_pointers(node_info *nodes, int *fixed_assignment_space, const uint size, const uint len)
-{
-  size_t g_tid = blockIdx.x * blockDim.x + threadIdx.x;
-  for (size_t i = g_tid; i < len; i += gridDim.x * blockDim.x)
-    nodes[i].fixed_assignments = &fixed_assignment_space[i * size];
-}
-
 int main(int argc, char **argv)
 {
   Log(info, "Starting program");
@@ -80,28 +73,17 @@ int main(int argc, char **argv)
 
   // Create space for bound computation storing and branching
   Log(debug, "Creating scratch space for workers");
-  worker_info *d_worker_space; // managed by each worker
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_worker_space, nworkers * sizeof(worker_info)));
+  worker_info *d_worker_space = nullptr; // managed by each worker
   Log(debug, "Allocating space for %u workers with psize %u", nworkers, psize);
   worker_info::allocate_all(d_worker_space, nworkers, psize);
 
   Log(debug, "Creating space for GLB computation");
-  glb_space *d_glb_space; // managed by each subworker
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_glb_space, nworkers * sizeof(glb_space)));
+  glb_space *d_glb_space = nullptr; // managed by each subworker
   glb_space::allocate_all(d_glb_space, nworkers, psize, dev_);
 
-  queue_info *d_queue_space, *h_queue_space; // Queue is managed by workers
-  CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
-  h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
-  memset(h_queue_space, 0, nworkers * sizeof(queue_info));
-  for (size_t i = 0; i < nworkers; i++)
-  {
-    h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
-    h_queue_space[i].batch_size = 0;
-    h_queue_space[i].id = (uint32_t)i;
-  }
-  CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
-  delete[] h_queue_space;
+  Log(debug, "Creating space for request queue");
+  queue_info *d_queue_space = nullptr;
+  queue_info::allocate_all(d_queue_space, nworkers);
 
   // Create MPMC queue for handling heap requests
   queue_declare(request_queue, tickets, head, tail);
@@ -203,17 +185,14 @@ int main(int argc, char **argv)
 
   // Free device memory
   d_bheap.free_memory();
-  CUDA_RUNTIME(cudaFree(d_queue_space));
   CUDA_RUNTIME(cudaFree(d_node_space));
   CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
   CUDA_RUNTIME(cudaFree(d_hold_status));
 
   worker_info::free_all(d_worker_space, nworkers);
-  CUDA_RUNTIME(cudaFree(d_worker_space));
   Log(debug, "Freed worker space");
   glb_space::free_all(d_glb_space, nworkers);
-  CUDA_RUNTIME(cudaFree(d_glb_space));
   Log(debug, "Freed GLB space");
 
   queue_free(request_queue, tickets, head, tail);

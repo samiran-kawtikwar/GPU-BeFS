@@ -4,18 +4,6 @@
 #define MAX_DATA float(1e6)
 typedef unsigned long long int uint64;
 #define eps 1e-6
-#define __DEBUG__D false
-
-#define checkpoint()                                       \
-  {                                                        \
-    __syncthreads();                                       \
-    if (__DEBUG__D)                                        \
-    {                                                      \
-      if (threadIdx.x == 0)                                \
-        printf("\nReached %s:%u\n\n", __FILE__, __LINE__); \
-    }                                                      \
-    __syncthreads();                                       \
-  }
 
 __managed__ __device__ int zeros_size;     // The number fo zeros
 __managed__ __device__ int n_matches;      // Used in step 3 to count the number of matches found

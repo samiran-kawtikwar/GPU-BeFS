@@ -29,8 +29,9 @@ struct glb_space
     CUDA_RUNTIME(cudaFree(la));
     tlap.clear();
   }
-  static void allocate_all(glb_space *d_glb_space, size_t nworkers, size_t psize, uint dev_ = 0)
+  static void allocate_all(glb_space *&d_glb_space, size_t nworkers, size_t psize, uint dev_ = 0)
   {
+    CUDA_RUNTIME(cudaMallocManaged((void **)&d_glb_space, nworkers * sizeof(glb_space)));
     for (size_t i = 0; i < nworkers; i++)
       d_glb_space[i].allocate(psize, TilesPerBlock, dev_);
   }
@@ -38,6 +39,7 @@ struct glb_space
   {
     for (size_t i = 0; i < nworkers; i++)
       d_glb_space[i].clear();
+    CUDA_RUNTIME(cudaFree(d_glb_space));
   }
 };
 

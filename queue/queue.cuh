@@ -3,15 +3,6 @@
 #include <cuda/atomic>
 #include <cuda_runtime.h>
 #include "queue_utils.cuh"
-typedef uint32_t queue_type;
-
-__device__ __forceinline__ uint32_t my_sleep(uint32_t ns)
-{
-    __nanosleep(ns);
-    if (ns < (1 << 20))
-        ns <<= 1;
-    return ns;
-}
 
 #define queue_enqueue(queue, tickets, head, tail, queue_size, val)                        \
     do                                                                                    \

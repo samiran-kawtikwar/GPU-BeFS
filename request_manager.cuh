@@ -11,6 +11,41 @@ __device__ cuda::atomic<bool, cuda::thread_scope_device> opt_reached;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_overflow;
 __device__ cuda::atomic<bool, cuda::thread_scope_device> heap_underflow; // For infeasibility check
 
+// Request queue status struct
+struct queue_info
+{
+  TaskType type;
+  node nodes[MAX_TOKENS];
+  uint batch_size;                                              // For batch push
+  cuda::atomic<uint32_t, cuda::thread_scope_device> req_status; // 0 done 1 pending 2 invalid
+  uint id;                                                      // For mapping with request queue; DON'T UPDATE
+
+  // Device-side allocation
+  static void allocate_all(queue_info *&d_queue_space, size_t nworkers)
+  {
+    CUDA_RUNTIME(cudaMalloc((void **)&d_queue_space, nworkers * sizeof(queue_info)));
+
+    // Temporary host-side initialization
+    queue_info *h_queue_space = (queue_info *)malloc(nworkers * sizeof(queue_info));
+    memset(h_queue_space, 0, nworkers * sizeof(queue_info));
+
+    for (size_t i = 0; i < nworkers; i++)
+    {
+      h_queue_space[i].req_status.store(DONE, cuda::memory_order_release);
+      h_queue_space[i].batch_size = 0;
+      h_queue_space[i].id = static_cast<uint32_t>(i);
+    }
+
+    CUDA_RUNTIME(cudaMemcpy(d_queue_space, h_queue_space, nworkers * sizeof(queue_info), cudaMemcpyHostToDevice));
+    free(h_queue_space);
+  }
+
+  static void free_all(queue_info *d_queue_space)
+  {
+    CUDA_RUNTIME(cudaFree(d_queue_space));
+  }
+};
+
 template <typename NODE>
 __device__ void process_requests_bnb(queue_callee(queue, tickets, head, tail),
                                      uint32_t queue_size,

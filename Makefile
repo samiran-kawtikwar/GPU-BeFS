@@ -1,7 +1,7 @@
 NVCC ?= nvcc
 GCC ?= g++
 
-ARCH := $(shell ~/get_SM.sh)
+ARCH := $(shell ./get_SM.sh)
 BUILD_DIR ?=./build
 
 # Find all source files

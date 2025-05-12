@@ -563,41 +563,6 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
       min_reduce_kernel1(tile, SIZE * SIZE, ph);
       sync(tile);
 
-#if __DEBUG__D == true
-      {
-        if (ph.d_min_in_mat[0] <= eps)
-        {
-          sync(tile);
-          if (tile.thread_rank() == 0)
-          {
-            printf("minimum element in problemID %u is non positive: %.3f\n", problemID, (float)ph.d_min_in_mat[0]);
-            printf("Cost\n");
-            print_cost_matrix(ph.cost, SIZE, SIZE);
-
-            printf("Slack\n");
-            print_cost_matrix(ph.slack, SIZE, SIZE);
-
-            printf("Row cover\n");
-            print_cost_matrix(ph.cover_row, 1, SIZE);
-
-            printf("Column cover\n");
-            print_cost_matrix(ph.cover_column, 1, SIZE);
-
-            printf("min rows\n");
-            print_cost_matrix(ph.min_in_rows, 1, SIZE);
-
-            printf("Min column\n");
-            print_cost_matrix(ph.min_in_cols, 1, SIZE);
-
-            printf("Printing finished by block %u\n", problemID);
-            assert(false);
-          }
-          return;
-        }
-        sync(tile);
-      }
-#endif
-
       step_6_init(tile, ph); // Also does dual update
       sync(tile);
 
@@ -606,7 +571,6 @@ fundef void PHA(TILE tile, PARTITION_HANDLE<data> &ph, const uint problemID = bl
     }
 
     sync(tile);
-    // checkpoint();
     step_5a(tile, ph);
     sync(tile);
     step_5b(tile, ph);
