@@ -15,30 +15,44 @@ using namespace std;
 
 // Download a URL to local_path (using wget), then open it in an ifstream.
 // Throws std::runtime_error on failure.
+
 std::ifstream download_and_open(const std::string &raw_url,
                                 const std::string &local_path)
 {
-  // Build the wget command: -q for quiet, -O to set output filename
-  std::string cmd = "wget -q -O " + local_path + " " + raw_url;
-  int rc = std::system(cmd.c_str());
-  if (rc != 0)
+  const int max_retries = 3;
+  int delay_sec = 2;
+
+  for (int attempt = 1; attempt <= max_retries; ++attempt)
   {
-    throw std::runtime_error("Download failed (exit code " +
-                             std::to_string(rc) + ")");
+    // Use --timeout and --tries to avoid hanging
+    std::string cmd = "wget --timeout=10 --tries=1 -q -O " + local_path + " " + raw_url;
+    int rc = std::system(cmd.c_str());
+
+    if (rc == 0)
+    {
+      std::ifstream in(local_path, std::ios::binary);
+      if (!in.is_open())
+        throw std::runtime_error("Failed to open file \"" + local_path + "\" after download");
+
+      // Check file isn't empty
+      in.seekg(0, std::ios::end);
+      if (in.tellg() == 0)
+        throw std::runtime_error("Downloaded file is empty: " + local_path);
+      in.seekg(0);
+
+      // Attempt to remove the file immediately
+      if (std::remove(local_path.c_str()) != 0)
+        std::perror(("Warning: could not delete temp file " + local_path).c_str());
+
+      return in;
+    }
+
+    std::cerr << "[Attempt " << attempt << "] Download failed, retrying in " << delay_sec << "s...\n";
+    std::this_thread::sleep_for(std::chrono::seconds(delay_sec));
+    delay_sec *= 2;
   }
 
-  std::ifstream in(local_path, std::ios::binary);
-  if (!in.is_open())
-  {
-    throw std::runtime_error("Failed to open file \"" + local_path + "\"");
-  }
-
-  // Delete the directory entry immediately.
-  // On POSIX, `in` stays valid; on Windows this will error.
-  if (std::remove(local_path.c_str()) != 0)
-    std::perror(("Warning: could not delete temp file " + local_path).c_str());
-
-  return in;
+  throw std::runtime_error("Download failed after " + std::to_string(max_retries) + " attempts");
 }
 
 // Convenience overload: just pass the instance name (e.g. "chr12a.dat")

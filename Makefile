@@ -30,7 +30,7 @@ LDFLAGS_CUDA ?= -lcuda -lgomp
 all: $(BUILD_DIR)/main.exe
 
 $(BUILD_DIR)/main.exe: $(CU_OBJ_FILES) $(CPP_OBJ_FILES)
-	$(NVCC) -o $@ $(CU_OBJ_FILES) $(LDIR_CUDA) $(LDFLAGS_CUDA) $(CPP_OBJ_FILES) $(LDIR_CPP) $(LDFLAGS_CPP)
+	$(NVCC) $(CUDAFLAGS) $(CUDAINC) -o $@ $(CU_OBJ_FILES) $(LDIR_CUDA) $(LDFLAGS_CUDA) $(CPP_OBJ_FILES) $(LDIR_CPP) $(LDFLAGS_CPP)
 
 # Pattern rule for cu files
 $(BUILD_DIR)/obj/%.cu.o: %.cu
