@@ -1,6 +1,7 @@
 #pragma once
 #include "queue/queue.cuh"
 #include "QAP/enums.cuh"
+#include "QAP/config.h"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
@@ -8,9 +9,6 @@
 // #define TIMER
 
 const uint N_RECEPIENTS = 1; // Don't change
-typedef unsigned int uint;
-typedef uint cost_type;
-typedef uint weight_type;
 
 #define BlockSize 512U
 #define TileSize 32U
