@@ -54,7 +54,6 @@ enum CounterName
   WAITING,
   WAITING_UNDERFLOW,
   TRANSFER,
-  // FEAS_CHECK,
   UPDATE_LB,
   GET_Z,
   SOLVE_Z,

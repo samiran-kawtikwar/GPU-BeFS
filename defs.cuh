@@ -1,6 +1,6 @@
 #pragma once
 #include "queue/queue.cuh"
-#include "enums.cuh"
+#include "QAP/enums.cuh"
 
 // #define MAX_HEAP_SIZE 1000000
 #define MAX_TOKENS 100
