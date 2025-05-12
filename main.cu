@@ -47,28 +47,16 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaSetDevice(dev_));
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, dev_);
-  problem_info *h_problem_info = generate_problem<cost_type>(config, config.seed);
+  problem_info *pinfo = generate_problem<cost_type>(config, config.seed);
 
-  Timer t = Timer();
   // Solve RCAP
-  cost_type UB = solve_with_gurobi<cost_type, weight_type>(h_problem_info->costs, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  Timer t = Timer();
+  cost_type UB = solve_with_gurobi<cost_type, weight_type>(pinfo->costs, pinfo->weights, pinfo->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
   Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
-  // print(h_problem_info, true, true, false);
+  // print(pinfo, true, true, false);
 
-  // Copy problem info to device
-  problem_info *d_problem_info;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&d_problem_info, sizeof(problem_info)));
-  d_problem_info->psize = psize;
-  d_problem_info->ncommodities = ncommodities;
-  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->costs, psize * psize * sizeof(cost_type)));
-  CUDA_RUNTIME(cudaMemcpy(d_problem_info->costs, h_problem_info->costs, psize * psize * sizeof(cost_type), cudaMemcpyHostToDevice));
-  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type)));
-  CUDA_RUNTIME(cudaMemcpy(d_problem_info->weights, h_problem_info->weights, ncommodities * psize * psize * sizeof(weight_type), cudaMemcpyHostToDevice));
-  CUDA_RUNTIME(cudaMalloc((void **)&d_problem_info->budgets, ncommodities * sizeof(weight_type)));
-  CUDA_RUNTIME(cudaMemcpy(d_problem_info->budgets, h_problem_info->budgets, ncommodities * sizeof(weight_type), cudaMemcpyHostToDevice));
-
-  // weight_type LB = subgrad_solver<cost_type, weight_type>(h_problem_info->costs, UB, h_problem_info->weights, h_problem_info->budgets, psize, ncommodities);
+  // weight_type LB = subgrad_solver<cost_type, weight_type>(pinfo->costs, UB, pinfo->weights, pinfo->budgets, psize, ncommodities);
   // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
 
   opt_reached.store(false, cuda::memory_order_release);
@@ -103,7 +91,7 @@ int main(int argc, char **argv)
   d_subgrad_space->allocate(psize, ncommodities, nsubworkers * nworkers, dev_);
 
   // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, d_problem_info, d_subgrad_space, UB); // block dimension >=256
+  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, pinfo, d_subgrad_space, UB); // block dimension >=256
   // printf("Exiting...\n");
   // exit(0);
 
@@ -183,14 +171,14 @@ int main(int argc, char **argv)
   // Frist kernel to create L1 nodes
   execKernel(initial_branching, 2, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_node_space, d_problem_info,
+             d_node_space, pinfo,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
   cuProfilerStart();
   execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
-             d_node_space, d_subgrad_space, d_problem_info,
+             d_node_space, d_subgrad_space, pinfo,
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status,
@@ -223,20 +211,12 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_node_space));
   CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
-  CUDA_RUNTIME(cudaFree(d_problem_info->costs));
-  CUDA_RUNTIME(cudaFree(d_problem_info->weights));
-  CUDA_RUNTIME(cudaFree(d_problem_info->budgets));
-  CUDA_RUNTIME(cudaFree(d_problem_info));
   CUDA_RUNTIME(cudaFree(d_hold_status));
   worker_info::free_all(d_worker_space, nworkers);
   CUDA_RUNTIME(cudaFree(d_worker_space));
   d_subgrad_space->clear();
   CUDA_RUNTIME(cudaFree(d_subgrad_space));
-
-  delete[] h_problem_info->costs;
-  delete[] h_problem_info->weights;
-  delete[] h_problem_info->budgets;
-  delete[] h_problem_info;
+  CUDA_RUNTIME(cudaFree(pinfo));
 
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
