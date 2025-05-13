@@ -9,8 +9,6 @@
 #include "request_manager.cuh"
 #include "memory_manager.cuh"
 #include "defs.cuh"
-#include "LAP/device_utils.cuh"
-#include "LAP/Hung_Tlap.cuh"
 #include "branch.cuh"
 
 #include "QAP/config.h"

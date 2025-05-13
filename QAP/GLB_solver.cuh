@@ -2,7 +2,7 @@
 
 #include <cooperative_groups.h>
 #include "../defs.cuh"
-#include "../LAP/Hung_Tlap.cuh"
+#include "LAP/Hung_Tlap.cuh"
 #include "../utils/logger.cuh"
 
 namespace cg = cooperative_groups;

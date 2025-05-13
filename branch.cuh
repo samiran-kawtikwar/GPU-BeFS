@@ -6,7 +6,6 @@
 #include "queue/queue.cuh"
 #include "defs.cuh"
 
-#include "LAP/Hung_Tlap.cuh"
 #include "QAP/problem_info.h"
 #include "QAP/GLB_solver.cuh"
 
