@@ -18,17 +18,19 @@ struct Config
 static void usage()
 {
   fprintf(stderr,
-          "\nUsage: [options]\n"
-          "\n-n <size of the problem>"
-          "\n-f range-fraction"
-          "\n-d <deviceId"
-          "\n-s <seed-value>"
+          "\nUsage: <Description> [Default]\n"
+          "\n-n <size of the problem> [10]"
+          "\n-k <number of commodities> [10]"
+          "\n-f <range-fraction> [10.0]"
+          "\n-d <deviceId> [0]"
+          "\n-s <seed-value> [45345]"
           "\n");
 }
 
 static void printConfig(Config config)
 {
   printf("  size: %u\n", config.user_n);
+  printf("  ncommodities: %u\n", config.user_ncommodities);
   printf("  frac: %f\n", config.frac);
   printf("  Device: %u\n", config.deviceId);
   printf("  seed value: %d\n", config.seed);
@@ -37,10 +39,11 @@ static void printConfig(Config config)
 static Config parseArgs(int argc, char **argv)
 {
   Config config;
-  config.user_n = 4096;
-  config.frac = 1.0;
+  config.user_n = 10;
+  config.frac = 10.0;
   config.deviceId = 0;
   config.seed = 45345;
+  config.user_ncommodities = 10;
 
   int opt;
   while ((opt = getopt(argc, argv, "n:f:d:s:h:k:")) >= 0)
