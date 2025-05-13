@@ -49,16 +49,28 @@
     cuda::atomic<uint32_t, cuda::thread_scope_device> *tickets_##queue = nullptr, *head_##queue = nullptr, *tail_##queue = nullptr; \
     queue_type *queue = nullptr
 
-#define queue_init(queue, tickets, head, tail, queue_size, dev)                                                                       \
+#define queue_alloc(queue, tickets, head, tail, queue_size, dev)                                                                     \
+    do                                                                                                                               \
+    {                                                                                                                                \
+        CUDA_RUNTIME(cudaMalloc((void **)&queue, queue_size * sizeof(queue_type)));                                                  \
+        CUDA_RUNTIME(cudaMalloc((void **)&tickets_##queue, queue_size * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>))); \
+        CUDA_RUNTIME(cudaMalloc((void **)&head_##queue, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                 \
+        CUDA_RUNTIME(cudaMalloc((void **)&tail_##queue, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                 \
+    } while (0)
+
+#define queue_reset(queue, tickets, head, tail, queue_size)                                                                           \
     do                                                                                                                                \
     {                                                                                                                                 \
-        CUDA_RUNTIME(cudaMalloc((void **)&queue, queue_size * sizeof(queue_type)));                                                   \
-        CUDA_RUNTIME(cudaMalloc((void **)&tickets_##queue, queue_size * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));  \
         CUDA_RUNTIME(cudaMemset((void *)tickets_##queue, 0, queue_size * sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>))); \
-        CUDA_RUNTIME(cudaMalloc((void **)&head_##queue, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                  \
         CUDA_RUNTIME(cudaMemset((void *)head_##queue, 0, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                 \
-        CUDA_RUNTIME(cudaMalloc((void **)&tail_##queue, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                  \
         CUDA_RUNTIME(cudaMemset((void *)tail_##queue, 0, sizeof(cuda::atomic<uint32_t, cuda::thread_scope_device>)));                 \
+    } while (0)
+
+#define queue_init(queue, tickets, head, tail, queue_size, dev)   \
+    do                                                            \
+    {                                                             \
+        queue_alloc(queue, tickets, head, tail, queue_size, dev); \
+        queue_reset(queue, tickets, head, tail, queue_size);      \
     } while (0)
 
 #define queue_free(queue, tickets, head, tail)               \
@@ -80,3 +92,29 @@
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tickets_##queue, \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *head_##queue,    \
         cuda::atomic<uint32_t, cuda::thread_scope_device> *tail_##queue
+
+__global__ void print_queue_status(queue_callee(queue, tickets, head, tail), uint queue_length)
+{
+    if (threadIdx.x == 0 && blockIdx.x == 0)
+    {
+        printf("Memory queue:   Head: %u, tail: %u, length: %u\n", head_queue->load(cuda::memory_order_relaxed),
+               tail_queue->load(cuda::memory_order_relaxed),
+               tail_queue->load(cuda::memory_order_relaxed) - head_queue->load(cuda::memory_order_relaxed));
+
+        // // print the queue
+        // for (uint i = head_queue->load(cuda::memory_order_relaxed); i < tail_queue->load(cuda::memory_order_relaxed); i++)
+        // {
+        //     printf("%u, ", queue[i % queue_length]);
+        // }
+        // printf("\n");
+
+        // // print queue tickets
+        // for (uint i = 0; i < queue_length; i++)
+        // {
+        //     if (i % 10 == 0)
+        //         printf("\n");
+        //     printf("%u, ", tickets_queue[i % queue_length].load(cuda::memory_order_relaxed));
+        // }
+        // printf("\n");
+    }
+}
