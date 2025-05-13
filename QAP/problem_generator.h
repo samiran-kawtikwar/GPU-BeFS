@@ -69,10 +69,11 @@ std::ifstream download_instance(const std::string &instance_name)
 }
 
 template <typename cost_type = uint>
-problem_info *generate_problem(Config &config, problem_info *pinfo, const int seed = 45345)
+problem_info *generate_problem(Config &config, const int seed = 45345)
 {
+  problem_info *pinfo = nullptr;
+  CUDA_RUNTIME(cudaMallocManaged((void **)&pinfo, sizeof(problem_info)));
   double frac = 10;
-
   cost_type *distances, *flows;
 
   if (config.problemType == generated)

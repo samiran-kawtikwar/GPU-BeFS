@@ -32,14 +32,11 @@ int main(int argc, char **argv)
 {
   Log(info, "Starting program");
   Config config = parseArgs(argc, argv);
-
   int dev_ = config.deviceId;
   CUDA_RUNTIME(cudaSetDevice(dev_));
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, dev_);
-  problem_info *pinfo;
-  CUDA_RUNTIME(cudaMallocManaged((void **)&pinfo, sizeof(problem_info)));
-  generate_problem<cost_type>(config, pinfo, config.seed);
+  problem_info *pinfo = generate_problem<cost_type>(config, config.seed);
   print(pinfo, false, false);
   printConfig(config);
 
