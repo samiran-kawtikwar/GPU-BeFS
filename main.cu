@@ -151,6 +151,7 @@ int main(int argc, char **argv)
              queue_caller(request_queue, tickets, head, tail), nworkers,
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
+
   cuProfilerStart();
   execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
