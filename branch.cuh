@@ -280,7 +280,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           {
             if (local_id == 0)
             {
-              printf("Optimal solution reached with cost %f\n", popped_node.value->LB);
+              DLog(critical, "Optimal solution reached with cost %f\n", popped_node.value->LB);
               opt_reached.store(true, cuda::memory_order_release);
             }
           }
