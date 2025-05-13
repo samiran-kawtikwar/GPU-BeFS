@@ -25,7 +25,7 @@ The framework is implemented in C++ and CUDA, and it provides a flexible and ext
 ### Libraries used
 
 - OMP (Open Multi-Processing) for multi-threading
-- Gurobi (optional, for getting tight upper bounds)
+- Gurobi (license optional: only needed if using a generated problem instance)
 - NVIDIA CUB (Part of CUDA Toolkit) for parallel algorithms and data structures
 - CUDA cooperative groups (for abstract subworker parallelism)
 - C++ STL (Standard Template Library) for data structures and algorithms
@@ -81,11 +81,8 @@ The codebase is modular, with each component handling a distinct aspect of the G
 - **LAP/**  
   GPU-accelerated solver for the Linear Assignment Problem using tile-based primitives. Based on [2].
 
-- **RCAP/**  
-  Implements subgradient-based bounding and feasibility routines for the Resource-Constrained Assignment Problem (RCAP), using the LAP module. Based on [3].
-
-- **QAP/** _(experimental)_  
-  Implements Gilmore-Lawler bounds for the Quadratic Assignment Problem. Not included in the main branch.
+- **QAP/**
+  Implements Gilmore-Lawler bounds for the Quadratic Assignment Problem, also uses the LAP module.
 
 #### Utilities
 
@@ -103,12 +100,11 @@ The codebase is modular, with each component handling a distinct aspect of the G
 |--- defs.cuh
 |--- memory_manager.cuh
 |--- request_manager.cuh
-├── LAP/
-│   ├── block_lap_kernels.cuh
-│   ├── Hung_Tlap.cuh
-├── RCAP/
-│   ├── subgrad_solver.cuh
-│   ├── rcap_kernels.cuh
+├── QAP/
+│   ├── GLB_solver.cuh
+|   ├── LAP/
+│   │   ├── block_lap_kernels.cuh
+│   │   ├── Hung_Tlap.cuh
 ├── queue/
 │   ├── queue.cuh
 │   ├── queue_utils.cuh
@@ -124,5 +120,3 @@ The codebase is modular, with each component handling a distinct aspect of the G
 <a id="1">[1]</a> Almasri, M., Chang, Y.-H., El Hajj, I., Nagi, R., Xiong, J., & Hwu, W.-m. (2024). _Parallelizing Maximal Clique Enumeration on GPUs_ In _Proceedings of the 32nd International Conference on Parallel Architectures and Compilation Techniques (PACT '23)_, IEEE Press, pp. 162–175. [DOI](https://doi.org/10.1109/PACT58117.2023.00022)
 
 <a id="2">[2]</a> Kawtikwar S. and Nagi, R. (2024). *HyLAC: Hybrid Linear Assignment solver in CUDA”, *Journal of Parallel and Distributed Computing\*, vol. 187, p. 104838. [DOI](https://doi.org/10.1016/j.jpdc.2024.104838)
-
-<a id="3">[3]</a> Reynen O. H. (2020). *GPU-Accelerated algorithms for the resource-constrained assignment problem”, *M.S. Thesis, University of Illinois at Urbana-Champaign\*, May 2020. [DOI](https://hdl.handle.net/2142/108143)
