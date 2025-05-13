@@ -1,12 +1,11 @@
 #pragma once
 
+#include <cooperative_groups.h>
 #include "utils/cuda_utils.cuh"
 #include "memory_manager.cuh"
 #include "request_manager.cuh"
 #include "queue/queue.cuh"
 #include "defs.cuh"
-
-#include "QAP/problem_info.h"
 #include "QAP/GLB_solver.cuh"
 
 __launch_bounds__(BlockSize, 2048 / BlockSize)

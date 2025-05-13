@@ -4,6 +4,7 @@
 #include "../defs.cuh"
 #include "LAP/Hung_Tlap.cuh"
 #include "../utils/logger.cuh"
+#include "problem_info.h"
 
 namespace cg = cooperative_groups;
 
