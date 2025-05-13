@@ -199,6 +199,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_fixed_assignment_space));
   CUDA_RUNTIME(cudaFree(stats));
   CUDA_RUNTIME(cudaFree(d_hold_status));
+
   worker_info::free_all(d_worker_space, nworkers);
   queue_info::free_all(d_queue_space);
   d_subgrad_space->clear();
