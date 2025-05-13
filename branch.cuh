@@ -8,6 +8,8 @@
 #include "defs.cuh"
 #include "QAP/GLB_solver.cuh"
 
+namespace cg = cooperative_groups;
+
 __launch_bounds__(BlockSize, 2048 / BlockSize)
     __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
                                       node_info *node_space, const problem_info *pinfo, glb_space *glb_space,
