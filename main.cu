@@ -32,30 +32,20 @@ int main(int argc, char **argv)
 {
   Log(info, "Starting program");
   Config config = parseArgs(argc, argv);
-  printConfig(config);
   int dev_ = config.deviceId;
-  uint psize = config.user_n;
-  uint ncommodities = config.user_ncommodities;
-  if (psize > 100)
-  {
-    Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 100");
-    exit(-1);
-  }
-  CUDA_RUNTIME(cudaDeviceReset());
   CUDA_RUNTIME(cudaSetDevice(dev_));
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, dev_);
   problem_info *pinfo = generate_problem<cost_type>(config, config.seed);
+  // print(pinfo, true, true, false);
+  printConfig(config);
 
-  // Solve RCAP for getting UB (Can be taken from a library if not interesting in using gurobi)
   Timer t = Timer();
+  uint psize = config.user_n, ncommodities = config.user_ncommodities;
+  // Solve RCAP for getting UB (Can be taken from a library if not interesting in using gurobi)
   cost_type UB = solve_with_gurobi<cost_type, weight_type>(pinfo->costs, pinfo->weights, pinfo->budgets, psize, ncommodities);
   Log(info, "RCAP solved with GUROBI: objective %u\n", (uint)UB);
   Log(info, "Time taken by Gurobi: %f sec", t.elapsed());
-  // print(pinfo, true, true, false);
-
-  // weight_type LB = subgrad_solver<cost_type, weight_type>(pinfo->costs, UB, pinfo->weights, pinfo->budgets, psize, ncommodities);
-  // Log(info, "RCAP solved with Subgradient: objective %u\n", (uint)LB);
 
   opt_reached.store(false, cuda::memory_order_release);
   heap_overflow.store(false, cuda::memory_order_release);

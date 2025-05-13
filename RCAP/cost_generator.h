@@ -169,6 +169,11 @@ T *get_budgets(T *weights, Config config)
 template <typename T>
 problem_info *generate_problem(Config config, int seed = 45345)
 {
+  if (config.user_n > 100)
+  {
+    Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 100");
+    exit(-1);
+  }
   problem_info *info = nullptr;
   CUDA_RUNTIME(cudaMallocManaged((void **)&info, sizeof(problem_info)));
   info->costs = generate_cost<T>(config, seed);
