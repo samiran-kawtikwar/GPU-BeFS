@@ -112,7 +112,7 @@ struct bnb_stats
 
 #ifdef TIMER
 #include "utils/profile_utils.cuh"
-#include "LAP/profile_utils.cuh"
+#include "QAP/LAP/profile_utils.cuh"
 #define INIT_TIME(counters) initializeCounters(&counters[blockIdx.x]);
 
 #define START_TIME(countername)                                                       \
