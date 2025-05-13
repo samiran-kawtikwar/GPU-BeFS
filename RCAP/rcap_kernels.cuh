@@ -137,3 +137,42 @@ __device__ void update_bounds_subgrad(const problem_info *pinfo, TILE tile,
     a[0].value->LB = space->max_LB[blockIdx.x * TilesPerBlock + tile.meta_group_rank()];
   sync(tile);
 }
+
+__device__ __forceinline__ void branch(worker_info *my_space, uint &nfail, node_info &current_node_info, node &current_node,
+                                       const uint ch_id, TILE tile, const uint lvl, const node &popped_node, const uint psize)
+{
+  // Get popped_node info in the worker space
+  for (uint j = tile.thread_rank(); j < psize; j += TileSize)
+    my_space->fixed_assignments[ch_id * psize + j] = popped_node.value->fixed_assignments[j];
+  sync(tile);
+
+  if (tile.thread_rank() == 0)
+  {
+    if (my_space->fixed_assignments[ch_id * psize + ch_id] == 0)
+    {
+      my_space->fixed_assignments[ch_id * psize + ch_id] = lvl + 1;
+    }
+    else
+    {
+      uint offset = atomicAdd(&nfail, 1);
+      // find appropriate index
+      uint prog = 0, index = psize - lvl;
+      for (uint j = psize - lvl; j < psize; j++)
+      {
+        if (my_space->fixed_assignments[ch_id * psize + j] == 0)
+        {
+          if (prog == offset)
+          {
+            index = j;
+            break;
+          }
+          prog++;
+        }
+      }
+      my_space->fixed_assignments[ch_id * psize + index] = lvl + 1;
+    }
+    my_space->level[ch_id] = lvl + 1;
+    current_node_info = node_info(&my_space->fixed_assignments[ch_id * psize], 0, lvl + 1);
+    current_node.value = &current_node_info;
+  }
+}

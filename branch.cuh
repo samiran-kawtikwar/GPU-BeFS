@@ -228,40 +228,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       uint i = my_i[tile_id];
       while (i < psize - lvl)
       {
-        // Get popped_node info in the worker space
-        for (uint j = local_id; j < psize; j += TileSize)
-          my_space->fixed_assignments[i * psize + j] = popped_node.value->fixed_assignments[j];
-        sync(tile);
-
-        if (local_id == 0)
-        {
-          if (my_space->fixed_assignments[i * psize + i] == 0)
-          {
-            my_space->fixed_assignments[i * psize + i] = lvl + 1;
-          }
-          else
-          {
-            uint offset = atomicAdd(&nfail, 1);
-            // find appropriate index
-            uint prog = 0, index = psize - lvl;
-            for (uint j = psize - lvl; j < psize; j++)
-            {
-              if (my_space->fixed_assignments[i * psize + j] == 0)
-              {
-                if (prog == offset)
-                {
-                  index = j;
-                  break;
-                }
-                prog++;
-              }
-            }
-            my_space->fixed_assignments[i * psize + index] = lvl + 1;
-          }
-          my_space->level[i] = lvl + 1;
-          current_node_info[tile_id] = node_info(&my_space->fixed_assignments[i * psize], 0, lvl + 1);
-          current_node[tile_id].value = &current_node_info[tile_id];
-        }
+        branch(my_space, nfail, current_node_info[tile_id], current_node[tile_id],
+               i, tile, lvl, popped_node, psize);
         sync(tile);
         feas_check(pinfo, tile,
                    &current_node[tile_id], col_fa[tile_id],
