@@ -131,7 +131,6 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
                                    bnb_stats *stats)
 {
   const uint psize = pinfo->psize;
-
   if (blockIdx.x > 0)
   {
     cg::thread_block block = cg::this_thread_block();
@@ -225,20 +224,19 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
       if (local_id == 0)
         my_i[tile_id] = atomicAdd(&child_id, 1);
       sync(tile);
-      uint i = my_i[tile_id];
-      while (i < psize - lvl)
+      while (my_i[tile_id] < psize - lvl)
       {
         branch(my_space, nfail, current_node_info[tile_id], current_node[tile_id],
-               i, tile, lvl, popped_node, psize);
+               my_i[tile_id], tile, lvl, popped_node, psize);
         sync(tile);
         feas_check(pinfo, tile,
                    &current_node[tile_id], col_fa[tile_id],
-                   lap_costs[tile_id], stats, my_space->feasible[i],
+                   lap_costs[tile_id], stats, my_space->feasible[my_i[tile_id]],
                    ph[tile_id]);
 
         sync(tile);
         // update bounds if the child is feasible
-        if (my_space->feasible[i])
+        if (my_space->feasible[my_i[tile_id]])
         {
           update_bounds_subgrad(pinfo, tile, subgrad_space, UB[tile_id],
                                 &current_node[tile_id], col_fa[tile_id], ph[tile_id]);
@@ -258,8 +256,8 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             {
               atomicAdd(&stats->nodes_explored, 1);
               atomicAdd(&nchild_feas, 1);
-              my_space->feasible[i] = true;
-              my_space->LB[i] = current_node[tile_id].value->LB;
+              my_space->feasible[my_i[tile_id]] = true;
+              my_space->LB[my_i[tile_id]] = current_node[tile_id].value->LB;
             }
           }
           else
@@ -267,7 +265,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
             if (local_id == 0)
             {
               atomicAdd(&stats->nodes_pruned_incumbent, 1);
-              my_space->feasible[i] = false;
+              my_space->feasible[my_i[tile_id]] = false;
             }
           }
         }
@@ -280,7 +278,6 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
         if (local_id == 0)
           my_i[tile_id] = atomicAdd(&child_id, 1);
         sync(tile);
-        i = my_i[tile_id];
       }
       __syncthreads();
       END_TIME(UPDATE_LB);
