@@ -10,11 +10,12 @@
 
 namespace cg = cooperative_groups;
 
-__global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
-                                  node_info *node_space, const problem_info *pinfo,
-                                  queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
-                                  queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
-                                  bool *hold_status, const cost_type UB)
+__launch_bounds__(BlockSize, 2048 / BlockSize)
+    __global__ void initial_branching(queue_callee(memory_queue, tickets, head, tail), uint memory_queue_size,
+                                      node_info *node_space, const problem_info *pinfo,
+                                      queue_callee(request_queue, tickets, head, tail), uint request_queue_size,
+                                      queue_info *queue_space, worker_info *work_space, BHEAP<node> bheap,
+                                      bool *hold_status, const cost_type UB)
 {
   const uint bId = blockIdx.x, psize = pinfo->psize;
   if (bId > 0)
