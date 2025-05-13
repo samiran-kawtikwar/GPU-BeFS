@@ -103,12 +103,12 @@ The codebase is modular, with each component handling a distinct aspect of the G
 |--- defs.cuh
 |--- memory_manager.cuh
 |--- request_manager.cuh
-├── LAP/
-│   ├── block_lap_kernels.cuh
-│   ├── Hung_Tlap.cuh
 ├── RCAP/
 │   ├── subgrad_solver.cuh
 │   ├── rcap_kernels.cuh
+│   ├── LAP/
+│   │   ├── block_lap_kernels.cuh
+│   │   ├── Hung_Tlap.cuh
 ├── queue/
 │   ├── queue.cuh
 │   ├── queue_utils.cuh
@@ -135,8 +135,15 @@ The executable for RCAP takes following command line arguments with default valu
 The executable for QAP takes following command line arguments with default values in square brackets:
 
 ```
-
+-n <size of the problem> [10]
+-d <deviceId> [0]
+-s <seed-value> [45345]
+-i <input filename> [None, uses randomly generated problem]
 ```
+
+When QAP is run with a generated problem, it will use gurobi to get the tight upper bound.
+When run with an input filename, it will download the problem from a publicly hosted github repository which includes problem instances from QAPLIB. The file will also have the upper bound (in the standard QAPLIB format), so there will be no Gurobi call.
+Some of the example input filenames are: `nug12.dat`, `nug14.dat`, `els19.dat` (etc)
 
 ## References
 
