@@ -65,32 +65,30 @@ int main(int argc, char **argv)
   t.reset();
 
   // Create space for queue
-  int nworkers, nsubworkers; // equals grid dimension of request manager
   // Find max concurrent blocks for the branch_n_bound kernel
-  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
-  Log(debug, "Max concurrent blocks per SM: %d", nworkers);
-  nworkers *= deviceProp.multiProcessorCount;
-  nsubworkers = BlockSize / TileSize;
 
   int nw1, nb1;
   cudaOccupancyMaxPotentialBlockSize(&nw1, &nb1, branch_n_bound, 0, 0);
   Log(info, "Max potential block size: %d", nb1);
   Log(info, "Max potential grid size: %d", nw1);
 
+  assert(nb1 >= BlockSize);
+  int nworkers; // equals grid dimension of request manager
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nworkers, branch_n_bound, BlockSize, 0);
+  Log(debug, "Max concurrent blocks per SM: %d", nworkers);
+  nworkers *= deviceProp.multiProcessorCount;
+
   // Create space for bound computation storing and branching
   Log(debug, "Creating scratch space for workers");
   worker_info *d_worker_space = nullptr; // managed by each worker
+  Log(debug, "Allocating space for %u workers with psize %u", nworkers, psize);
   worker_info::allocate_all(d_worker_space, nworkers, psize);
 
+  int nsubworkers = BlockSize / TileSize;
   Log(debug, "Creating space for subgrad solver");
-  subgrad_space *d_subgrad_space; // managed by each subworker
+  subgrad_space *d_subgrad_space = nullptr; // managed by each subworker
   CUDA_RUNTIME(cudaMallocManaged((void **)&d_subgrad_space, nsubworkers * nworkers * sizeof(subgrad_space)));
   d_subgrad_space->allocate(psize, ncommodities, nsubworkers * nworkers, dev_);
-
-  // Call subgrad_solver Block
-  // execKernel(g_subgrad_solver, 1, BlockSize, dev_, true, pinfo, d_subgrad_space, UB); // block dimension >=256
-  // printf("Exiting...\n");
-  // exit(0);
 
   Log(debug, "Creating space for request queue");
   queue_info *d_queue_space = nullptr;
@@ -172,7 +170,7 @@ int main(int argc, char **argv)
              d_hold_status,
              UB, stats);
   cuProfilerStop();
-  printf("\n");
+  Log(warn, "BnB Terminated");
 
 #ifdef TIMER
   printCounters(counters, false);
