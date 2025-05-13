@@ -7,6 +7,7 @@
 #include "queue/queue.cuh"
 #include "defs.cuh"
 #include "QAP/GLB_solver.cuh"
+#include "QAP/qap_kernels.cuh"
 
 namespace cg = cooperative_groups;
 
@@ -169,29 +170,7 @@ __launch_bounds__(BlockSize, 2048 / BlockSize)
           fa = &my_space->fixed_assignments[i * psize];
         // Get popped_node info in the worker space
         __syncthreads();
-        for (uint j = threadIdx.x; j < psize; j += blockDim.x)
-          fa[j] = popped_node.value->fixed_assignments[j];
-        __syncthreads();
-
-        if (threadIdx.x == 0)
-        {
-          // DLog(info, "\nPopped fa: ");
-          // for (uint j = 0; j < psize; j++)
-          //   printf("%d ", fa[j]);
-          // printf("\n");
-          uint counter = 0;
-          for (uint index = 0; index < psize; index++)
-          {
-            if (counter == i && fa[index] == -1)
-            {
-              fa[index] = lvl; // fixes the assignment at counter
-              break;
-            }
-            if (fa[index] == -1)
-              counter++;
-          }
-          my_space->level[i] = lvl + 1;
-        }
+        branch(fa, my_space, popped_node, i, lvl, psize);
         __syncthreads();
         END_TIME(BRANCH);
         START_TIME(UPDATE_LB);
