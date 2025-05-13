@@ -197,7 +197,6 @@ int main(int argc, char **argv)
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
   Log(debug, "Freed queues");
-  pinfo->free();
   CUDA_RUNTIME(cudaFree(pinfo));
   Log(debug, "Freed problem info");
   // print exit code message and return

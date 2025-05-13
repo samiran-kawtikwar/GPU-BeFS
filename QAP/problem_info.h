@@ -20,4 +20,9 @@ struct problem_info
     CUDA_RUNTIME(cudaFree(distances));
     CUDA_RUNTIME(cudaFree(flows));
   }
+  ~problem_info()
+  {
+    CUDA_RUNTIME(cudaFree(distances));
+    CUDA_RUNTIME(cudaFree(flows));
+  }
 };
