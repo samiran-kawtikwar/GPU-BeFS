@@ -190,17 +190,13 @@ int main(int argc, char **argv)
 
   worker_info::free_all(d_worker_space, nworkers);
   queue_info::free_all(d_queue_space);
-  Log(debug, "Freed worker space");
   glb_space::free_all(d_glb_space, nworkers);
-  Log(debug, "Freed GLB space");
+  CUDA_RUNTIME(cudaFree(pinfo));
 
   queue_free(request_queue, tickets, head, tail);
   queue_free(memory_queue, tickets, head, tail);
-  Log(debug, "Freed queues");
-  CUDA_RUNTIME(cudaFree(pinfo));
-  Log(debug, "Freed problem info");
+
   // print exit code message and return
-  // Log(info, "Exit code: %s", ExitCode_text[exit_code]);
-  // return int(exit_code);
-  return 0;
+  Log(info, "Exit code: %s", ExitCode_text[exit_code]);
+  return int(exit_code);
 }
