@@ -1,38 +1,12 @@
 #pragma once
 
-#include <mutex>
-#include <cassert>
-#include <atomic>
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <thread>
-#include <vector>
-#include <map>
-#include <string>
-#include <iostream>
-#include <numeric>
-#include <tuple>
-#include <stdio.h>
-#include <stdarg.h>
-
-#include <cstdio>
-#include <string>
-// freestanding specific
-
-#include "cuda.h"
+#include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cub/cub.cuh>
+
 typedef uint32_t queue_type;
 typedef std::chrono::system_clock::time_point timepoint;
-
-#define PRINT_ERROR                                          \
-	do                                                         \
-	{                                                          \
-		fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
-						__LINE__, __FILE__, errno, strerror(errno));     \
-		exit(1);                                                 \
-	} while (0)
 
 static std::chrono::time_point<std::chrono::high_resolution_clock> now()
 {
