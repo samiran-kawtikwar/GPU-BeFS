@@ -189,6 +189,7 @@ int main(int argc, char **argv)
   CUDA_RUNTIME(cudaFree(d_hold_status));
 
   worker_info::free_all(d_worker_space, nworkers);
+  queue_info::free_all(d_queue_space);
   Log(debug, "Freed worker space");
   glb_space::free_all(d_glb_space, nworkers);
   Log(debug, "Freed GLB space");
