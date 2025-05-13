@@ -119,6 +119,25 @@ The codebase is modular, with each component handling a distinct aspect of the G
     ├── cuda_utils.cuh
 ```
 
+## Examples
+
+Once compiled, the executable will be located under build directory with the name `main.exe`
+The executable for RCAP takes following command line arguments with default values in square brackets:
+
+```
+-n <size of the problem> [10]
+-k <number of commodities> [10]
+-f <range-fraction> [10.0]
+-d <deviceId> [0]
+-s <seed-value> [45345]
+```
+
+The executable for QAP takes following command line arguments with default values in square brackets:
+
+```
+
+```
+
 ## References
 
 <a id="1">[1]</a> Almasri, M., Chang, Y.-H., El Hajj, I., Nagi, R., Xiong, J., & Hwu, W.-m. (2024). _Parallelizing Maximal Clique Enumeration on GPUs_ In _Proceedings of the 32nd International Conference on Parallel Architectures and Compilation Techniques (PACT '23)_, IEEE Press, pp. 162–175. [DOI](https://doi.org/10.1109/PACT58117.2023.00022)
