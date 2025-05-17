@@ -7,7 +7,6 @@
 #include <thread>
 #include "config.h"
 #include "problem_info.h"
-#include "gurobi_solver.h"
 #include "../utils/timer.h"
 #include "../utils/logger.cuh"
 #include "../defs.cuh"
@@ -73,43 +72,12 @@ problem_info *generate_problem(Config &config, const int seed = 45345)
 {
   problem_info *pinfo = nullptr;
   CUDA_RUNTIME(cudaMallocManaged((void **)&pinfo, sizeof(problem_info)));
-  double frac = 10;
   cost_type *distances, *flows;
 
   if (config.problemType == generated)
   {
-    size_t user_n = config.user_n;
-    pinfo->psize = user_n;
-    distances = new cost_type[user_n * user_n];
-    flows = new cost_type[user_n * user_n];
-    if (user_n > 50)
-    {
-      Log(critical, "Problem size too large, Implementation not ready yet. Use problem size <= 50");
-      exit(-1);
-    }
-    // Generate random distances and flows
-    default_random_engine generator(seed);
-    generator.discard(1);
-    uniform_int_distribution<cost_type> distribution(0, frac * user_n - 1);
-    for (size_t i = 0; i < user_n; i++)
-    {
-      for (size_t j = 0; j < user_n; j++)
-      {
-        if (i == j)
-        {
-          distances[user_n * i + j] = 0;
-          flows[user_n * i + j] = 0;
-        }
-        else
-        {
-          distances[user_n * i + j] = (cost_type)distribution(generator);
-          flows[user_n * i + j] = (cost_type)distribution(generator);
-        }
-      }
-    }
-
-    // solve the problem to get the optimal objective
-    pinfo->opt_objective = solve_with_gurobi(distances, flows, user_n);
+    Log(critical, "Generated input type not allowed on -no-Gurobi branch");
+    exit(-1);
   }
   else if (config.problemType == qaplib)
   {

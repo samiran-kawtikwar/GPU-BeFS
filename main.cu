@@ -13,7 +13,6 @@
 
 #include "QAP/config.h"
 #include "QAP/problem_generator.h"
-#include "QAP/gurobi_solver.h"
 #include "QAP/GLB_solver.cuh"
 
 #include "cudaProfiler.h"
