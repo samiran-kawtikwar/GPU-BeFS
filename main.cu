@@ -15,9 +15,6 @@
 #include "QAP/problem_generator.h"
 #include "QAP/GLB_solver.cuh"
 
-#include "cudaProfiler.h"
-#include "cuda_profiler_api.h"
-
 __global__ void get_exit_code(ExitCode *ec)
 {
 
@@ -147,7 +144,6 @@ int main(int argc, char **argv)
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status, UB);
 
-  cuProfilerStart();
   execKernel(branch_n_bound, nworkers, BlockSize, dev_, true,
              queue_caller(memory_queue, tickets, head, tail), memory_queue_len,
              d_node_space, d_glb_space, pinfo,
@@ -155,7 +151,7 @@ int main(int argc, char **argv)
              d_queue_space, d_worker_space, d_bheap,
              d_hold_status,
              UB, stats);
-  cuProfilerStop();
+
   Log(warn, "BnB Terminated");
 
 #ifdef TIMER
