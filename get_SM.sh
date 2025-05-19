@@ -7,9 +7,26 @@
 device_index=${1:-0}
 timestamp=$(date +%s.%N)
 gcc_binary=${CMAKE_CXX_COMPILER:-$(which c++)}
-CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
-CUDA_INCLUDE_DIRS=${CUDA_INCLUDE_DIRS:-${CUDA_HOME}/include}
-CUDA_CUDART_LIBRARY=${CUDA_CUDART_LIBRARY:-${CUDA_HOME}/lib64/libcudart.so}
+
+# Derive CUDA paths from nvcc location
+nvcc_path=$(which nvcc)
+if [ -z "$nvcc_path" ]; then
+  echo "nvcc not found in PATH" >&2
+  exit 0
+fi
+
+CUDA_BIN_DIR=$(dirname "$nvcc_path")
+CUDA_HOME=$(dirname "$CUDA_BIN_DIR")
+CUDA_INCLUDE_DIRS=${CUDA_HOME}/include
+CUDA_LIB_DIR=${CUDA_HOME}/lib64
+CUDA_CUDART_LIBRARY=${CUDA_LIB_DIR}/libcudart.so
+
+if [ ! -f "$CUDA_CUDART_LIBRARY" ]; then
+  echo "ERROR: libcudart.so not found at $CUDA_CUDART_LIBRARY" >&2
+  exit 0
+fi
+
+
 generated_binary="/tmp/cuda-compute-version-helper-$$-$timestamp"
 # create a 'here document' that is code we compile and use to probe the card
 source_code="$(cat << EOF 
