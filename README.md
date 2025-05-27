@@ -1,6 +1,10 @@
 # GPU-BeFS
 
-A GPU-Accelerated framework for performing Branch and Bound Search on GPUs with Best First Search (BeFS) order. This project is part of the research paper "A framework for GPU-Accelerated Branch-And-Bound with Best First Search" by Samiran Kawtikwar, Izzat El Hajj, and Rakesh Nagi. [DOI Pending]
+A GPU-Accelerated framework for performing Branch and Bound Search on GPUs with Best First Search (BeFS) order by Samiran Kawtikwar, Izzat El Hajj, and Rakesh Nagi. [DOI Pending]
+
+<!-- Add an image here -->
+
+![GPU-BeFS](GPU-BeFS.png)
 
 ### Description
 
