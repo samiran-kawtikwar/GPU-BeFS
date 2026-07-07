@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-exec_home=~/RCAP-Project/block-heap/
+exec_home=~/GPU-BeFS
 # baseline_home=~/RCAP-Project/baseline/cpu-bnb
 
 size=5
@@ -18,7 +18,7 @@ do
         for s in ${seeds[@]}
         do
             echo "n=$n, k=$n running ..."
-            /usr/bin/timeout $TIMEOUT ${exec_home}/build/main.exe -n $n -k $n -s $s -f $r -d 0 >> gpu_run_fixed.log            
+            /usr/bin/timeout $TIMEOUT ${exec_home}/build/main.exe -n $n -k $n -s $s -f $r -d 0 >> rtx-5090.log            
             # ${baseline_home}/build/main.exe -n $n -k $n -s $s -f $r -d 0 >> cpu_run.log
             out=($?)
             if [ $out -eq 0 ]
